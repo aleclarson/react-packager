@@ -10,42 +10,46 @@
 
 const path = require('path');
 const inArray = require('in-array');
-const getPlatformExtension = require('../lib/getPlatformExtension');
+const getPlatformExtension = require('../utils/getPlatformExtension');
 
 const GENERIC_PLATFORM = 'generic';
 const NATIVE_PLATFORM = 'native';
 
 class HasteMap {
   constructor({
-    ignore,
     fastfs,
     extensions,
     moduleCache,
+    ignoreFilePath,
     preferNativePlatform,
   }) {
-    this._ignore = ignore;
     this._fastfs = fastfs;
     this._extensions = extensions;
     this._moduleCache = moduleCache;
+    this._ignoreFilePath = ignoreFilePath;
     this._preferNativePlatform = preferNativePlatform;
   }
 
   build() {
     this._map = Object.create(null);
 
-    let promises = this._fastfs.findFilesByExts(this._extensions, { ignore: this._ignore })
-      .map(file => this._processHasteModule(file));
+    const ignoreFilePath = this._ignoreFilePath;
+
+    let promises = this._fastfs.findFilesByExts(
+      this._extensions, { ignoreFilePath }
+    ).map(file => this._processHasteModule(file));
 
     promises = promises.concat(
-      this._fastfs.findFilesByName('package.json', { ignore: this._ignore })
-        .map(file => this._processHastePackage(file))
+      this._fastfs.findFilesByName(
+        'package.json', { ignoreFilePath }
+      ).map(file => this._processHastePackage(file))
     );
 
     return Promise.all(promises);
   }
 
   processFileChange(type, absPath) {
-    return Promise().then(() => {
+    return Promise.try(() => {
       /*eslint no-labels: 0 */
       if (type === 'delete' || type === 'change') {
         loop: for (const name in this._map) {
@@ -133,10 +137,10 @@ class HasteMap {
     const modulePlatform = getPlatformExtension(mod.path) || GENERIC_PLATFORM;
     const existingModule = moduleMap[modulePlatform];
 
-    if (existingModule.path !== mod.path) {
+    if (existingModule && existingModule.path !== mod.path) {
 
       // Allow modules to override their packages.
-      if (existingModule && existingModule.type === 'Package') {
+      if (existingModule.type === 'Package') {
         if (mod.type === 'Module') {
           moduleMap[modulePlatform] = mod;
           return;

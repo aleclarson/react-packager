@@ -44,7 +44,7 @@ class ModuleCache {
         transformCode: this._transformCode,
       });
     }
-    return this._moduleCache[id];
+    return this._moduleCache[hash];
   }
 
   getAllModules() {
@@ -63,7 +63,7 @@ class ModuleCache {
         cache: this._cache,
       });
     }
-    return this._moduleCache[id];
+    return this._moduleCache[hash];
   }
 
   getPackage(filePath) {
@@ -77,7 +77,7 @@ class ModuleCache {
         cache: this._cache,
       });
     }
-    return this._packageCache[id];
+    return this._packageCache[hash];
   }
 
   getPackageForModule(module) {

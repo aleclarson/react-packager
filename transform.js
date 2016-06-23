@@ -10,14 +10,13 @@
  */
 'use strict';
 
-const inlineRequiresPlugin = require('fbjs-scripts/babel-6/inline-requires');
-const externalHelpersPlugin = require('babel-plugin-external-helpers');
+const fs = require('fs');
+const path = require('path');
+const babel = require('babel-core');
 const makeHMRConfig = require('babel-preset-react-native/configs/hmr');
 const resolvePlugins = require('babel-preset-react-native/lib/resolvePlugins');
-const babel = require('babel-core');
-const json5 = require('json5');
-const path = require('path');
-const fs = require('fs');
+const inlineRequiresPlugin = require('babel-preset-fbjs/plugins/inline-requires');
+const externalHelpersPlugin = require('babel-plugin-external-helpers');
 
 /**
  * Return a memoized function that checks for the existence of a
@@ -50,9 +49,9 @@ const getBabelRC = (function() {
     // If a .babelrc file doesn't exist in the project,
     // use the Babel config provided with react-native.
     if (!projectBabelRCPath || !fs.existsSync(projectBabelRCPath)) {
-      babelRC = json5.parse(
+      babelRC = JSON.parse(
         fs.readFileSync(
-          path.resolve(__dirname, 'rn-babelrc.json'))
+          path.resolve(__dirname, '.babelrc'))
         );
 
       // Require the babel-preset's listed in the default babel config
@@ -63,6 +62,7 @@ const getBabelRC = (function() {
     return babelRC;
   }
 })();
+
 
 /**
  * Given a filename and options, build a Babel
@@ -110,7 +110,11 @@ function transform(src, filename, options) {
 module.exports = function(data, callback) {
   let result;
   try {
-    result = transform(data.sourceCode, data.filename, data.options);
+    result = transform(
+      data.sourceCode,
+      data.filename,
+      data.options
+    );
   } catch (e) {
     callback(e);
     return;

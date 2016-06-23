@@ -9,23 +9,20 @@
 'use strict';
 
 const File = require('./File');
-const isDescendant = require('../../lib/isDescendant');
+const isDescendant = require('../utils/isDescendant');
 
 const Path = require('path');
 const syncFs = require('io/sync');
-const Promise = require('Promise');
 const {EventEmitter} = require('events');
-
-require('./lotusfs').initialize();
 
 const NOT_FOUND_IN_ROOTS = 'NotFoundInRootsError';
 
 class Fastfs extends EventEmitter {
-  constructor(name, roots, fileWatcher, {ignore, crawling, activity}) {
+  constructor(name, roots, fileWatcher, {ignoreFilePath, crawling, activity}) {
     super();
     this._name = name;
     this._fileWatcher = fileWatcher;
-    this._ignore = ignore;
+    this._ignoreFilePath = ignoreFilePath;
     this._detachedRoots = [];
     this._roots = roots.map(root => new File(root, { isDir: true }));
     this._fastPaths = Object.create(null);
@@ -65,7 +62,7 @@ class Fastfs extends EventEmitter {
   }
 
   stat(filePath) {
-    return Promise().then(() => {
+    return Promise.try(() => {
       const file = this._getFile(filePath);
       return file.stat();
     });
@@ -76,25 +73,30 @@ class Fastfs extends EventEmitter {
     return [].concat(...this._roots.map(root => root.getFiles()));
   }
 
-  findFilesByExt(ext, { ignore } = {}) {
-    return this.findFilesByExts([ext], {ignore});
+  findFilesByExt(ext, { ignoreFilePath } = {}) {
+    return this.findFilesByExts([ext], {ignoreFilePath});
   }
 
-  findFilesByExts(exts, { ignore } = {}) {
+  findFilesByExts(exts, { ignoreFilePath } = {}) {
     return this.getAllFiles()
-      .filter(file => (
-        exts.indexOf(file.ext()) !== -1 && (!ignore || !ignore(file.path))
-      ))
-      .map(file => file.path);
+    .filter(file => {
+      if (exts.indexOf(file.ext()) < 0) {
+        return false;
+      }
+      return !ignoreFilePath || !ignoreFilePath(file.path);
+    })
+    .map(file => file.path);
   }
 
-  findFilesByName(name, { ignore } = {}) {
+  findFilesByName(name, { ignoreFilePath } = {}) {
     return this.getAllFiles()
-      .filter(
-        file => Path.basename(file.path) === name &&
-          (!ignore || !ignore(file.path))
-      )
-      .map(file => file.path);
+    .filter(file => {
+      if (name !== Path.basename(file.path)) {
+        return false;
+      }
+      return !ignoreFilePath || !ignoreFilePath(file.path);
+    })
+    .map(file => file.path);
   }
 
   matchFilesByPattern(pattern) {
@@ -202,7 +204,7 @@ class Fastfs extends EventEmitter {
       let root = this._getAndAssertRoot(filePath);
 
       // Ignored files are created on-the-fly.
-      if (this._ignore(filePath)) {
+      if (this._ignoreFilePath(filePath)) {
         file = root._createFileFromPath(filePath);
       } else {
         try {
@@ -229,16 +231,6 @@ class Fastfs extends EventEmitter {
     this._getAndAssertRoot(file.path).addChild(file);
   }
 
-  // _didAbortFileEvent(absPath, reason) {
-  //   log
-  //     .moat(1)
-  //     .red('File event aborted: ')
-  //     .gray(absPath)
-  //     .moat(0)
-  //     .white(reason)
-  //     .moat(1);
-  // }
-
   _processFileChange(type, filePath, root, fstat) {
 
     if (fstat && fstat.isDirectory()) {
@@ -246,13 +238,7 @@ class Fastfs extends EventEmitter {
     }
 
     const absPath = Path.join(root, filePath);
-    if (!this._getRoot(absPath)) {
-      // this._didAbortFileEvent(absPath, 'This path has an invalid root!');
-      return;
-    }
-
-    if (this._ignore(absPath)) {
-      // this._didAbortFileEvent(absPath, 'This path is ignored by the packager!');
+    if (!this._getRoot(absPath) || this._ignoreFilePath(absPath)) {
       return;
     }
 
@@ -273,24 +259,14 @@ class Fastfs extends EventEmitter {
       }
     }
 
-    const relPath = Path.relative(lotus.path, absPath);
-    log.moat(1);
-    if (type === 'delete') {
-      log.white('File deleted: ');
-      log.red(relPath);
-    } else if (type === 'change') {
-      log.white('File changed: ');
-      log.green(relPath);
-    } else if (type === 'add') {
-      log.white('File added: ');
-      log.cyan(relPath);
-    }
-    log.moat(1);
-
     if (type !== 'delete') {
       this._add(new File(absPath, { isDir: false }));
     }
 
+    log.moat(1);
+    log.white(type, ' ');
+    log.yellow(lotus.relative(absPath));
+    log.moat(1);
     this.emit('change', type, filePath, root, fstat);
   }
 }

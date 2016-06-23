@@ -6,11 +6,17 @@ const syncFs = require('io/sync');
 const asyncFs = require('io/async');
 
 class File {
-  constructor(filePath, { isDir }) {
+  constructor(filePath, { isDir, isDetached }) {
     this.path = filePath;
     this.isDir = Boolean(isDir);
+    this.isDetached = Boolean(isDetached);
     if (this.isDir) {
       this.children = Object.create(null);
+    }
+    if (this.isDetached) {
+      this.getFileFromPath = (filePath) =>
+        this._getFileFromPath(filePath) ||
+          this._createFileFromPath(filePath);
     }
   }
 
@@ -25,7 +31,7 @@ class File {
   readWhile(predicate) {
     return readWhile(this.path, predicate).then(({result, completed}) => {
       if (completed && !this._read) {
-        this._read = Promise.resolve(result);
+        this._read = Promise(result);
       }
       return result;
     });

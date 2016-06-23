@@ -1,6 +1,5 @@
 'use strict';
 
-const Promise = require('Promise');
 const path = require('path');
 const Module = require('./Module');
 

@@ -9,7 +9,6 @@
 'use strict';
 
 var babel = require('babel-core');
-var babel = require('babel-core');
 var makeInternalConfig = require('babel-preset-react-native/configs/internal');
 
 // Runs internal transforms on the given sourceCode. Note that internal

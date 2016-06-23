@@ -8,15 +8,16 @@
  */
 'use strict';
 
-const ModuleTransport = require('../lib/ModuleTransport');
-const Promise = require('Promise');
-const declareOpts = require('../lib/declareOpts');
-const path = require('path');
+const debug = require('debug')('ReactNativePackager:JStransformer');
+
 const fs = require('fs');
+const path = require('path');
 const temp = require('temp');
 const util = require('util');
 const workerFarm = require('worker-farm');
-const debug = require('debug')('ReactNativePackager:JStransformer');
+
+const declareOpts = require('../utils/declareOpts');
+const ModuleTransport = require('../utils/ModuleTransport');
 
 const workerModulePath = JSON.stringify(require.resolve('./worker'));
 
@@ -114,7 +115,7 @@ class Transformer {
 
   loadFileAndTransform(filePath, options) {
     if (this._transform == null) {
-      return Promise.reject(new Error('No transfrom module'));
+      return Promise.reject(new Error('No transform module'));
     }
 
     debug('transforming file', filePath);

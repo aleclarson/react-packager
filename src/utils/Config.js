@@ -8,18 +8,16 @@
  */
 'use strict';
 
-const Promise = require('Promise');
 const path = require('path');
 const syncFs = require('io/sync');
 
-const { platformBlacklist, blacklist, whitelist } = require('../../blacklist');
+const makeBlacklist = require('./blacklist');
+const makeWhitelist = require('./whitelist');
 
-function GlobalConfig(filePath) {
+function Config(filePath) {
 
-  filePath = path.resolve(lotus.path, filePath);
-
-  if (GlobalConfig._cache[filePath]) {
-    return GlobalConfig._cache[filePath];
+  if (Config._cache[filePath]) {
+    return Config._cache[filePath];
   }
 
   if (!syncFs.isFile(filePath)) {
@@ -28,19 +26,19 @@ function GlobalConfig(filePath) {
     throw error;
   }
 
-  const self = Object.create(GlobalConfig.prototype);
+  const self = Object.create(Config.prototype);
 
   self.path = filePath;
   self.reload();
 
-  return GlobalConfig._cache[filePath] = self;
+  return Config._cache[filePath] = self;
 }
 
-GlobalConfig._cache = Object.create(null);
+Config._cache = Object.create(null);
 
-GlobalConfig.prototype = {
+Config.prototype = {
 
-  reload: function() {
+  reload() {
     let json;
     if (syncFs.exists(this.path)) {
       json = JSON.parse(syncFs.read(this.path));
@@ -55,37 +53,24 @@ GlobalConfig.prototype = {
     // Support global path redirection.
     this.redirect = json.redirect || Object.create(null);
 
-    const whitelistRE = whitelist(json.whitelist);
-    this._whitelist = (filePath) =>
-      whitelistRE.test(filePath);
+    const whitelistRE = makeWhitelist(json.whitelist);
+    this.whitelist = (filePath) => whitelistRE.test(filePath);
 
-    const blacklistRE = blacklist(json.blacklist);
-    this._blacklist = (filePath) =>
-      !this._whitelist(filePath) && blacklistRE.test(filePath);
-  },
-
-  getBlacklist: function(platform) {
-    if (!platform) {
-      return this._blacklist;
-    }
-    const blacklistRE = platformBlacklist(platform);
-    if (!blacklistRE) {
-      return () => false;
-    }
-    return (filePath) =>
-      blacklistRE.test(filePath);
+    const blacklistRE = makeBlacklist(json.blacklist);
+    this.blacklist = (filePath) =>
+      !this.whitelist(filePath) && blacklistRE.test(filePath);
   },
 
   // Resolves a non-absolute path into an absolute path.
-  // Relative to the directory that this GlobalConfig resides in.
-  resolve: function(modulePath) {
+  // Relative to the directory that this Config resides in.
+  resolve(modulePath) {
     return path.isAbsolute(modulePath) ? modulePath :
       lotus.resolve(modulePath, this.path);
   },
 
-  relative: function(modulePath) {
+  relative(modulePath) {
     return path.resolve(path.dirname(this.path), modulePath);
   }
 };
 
-module.exports = GlobalConfig('react-packager.json');
+module.exports = Config;

@@ -10,9 +10,10 @@
 
 const fs = require('fs');
 const path = require('path');
-const getCacheFilePath = require('./lib/getCacheFilePath');
-const loadCacheSync = require('./lib/loadCacheSync');
 const tmpDir = require('os').tmpDir();
+
+const getCacheFilePath = require('./getCacheFilePath');
+const loadCacheSync = require('./loadCacheSync');
 
 const statAsync = Promise.ify(fs.stat);
 const writeFileAsync = Promise.ify(fs.writeFile);
@@ -155,7 +156,7 @@ class Cache {
         });
         return writeFileAsync(cacheFilepath, JSON.stringify(json));
       })
-      .catch(e => console.error('Error while persisting cache:', e.message))
+      .fail(e => console.error('Error while persisting cache:', e.message))
       .then(() => {
         this._persisting = null;
         return true;
@@ -182,7 +183,7 @@ class Cache {
         ret[key].metadata.mtime = record.metadata.mtime;
 
         Object.keys(record.data).forEach(field => {
-          ret[key].data[field] = Promise.resolve(record.data[field]);
+          ret[key].data[field] = Promise(record.data[field]);
         });
       }
     });

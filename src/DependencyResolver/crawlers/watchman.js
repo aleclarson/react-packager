@@ -1,10 +1,9 @@
 'use strict';
 
-const isDescendant = require('../../lib/isDescendant');
-const Promise = require('Promise');
+const isDescendant = require('../../utils/isDescendant');
 const path = require('path');
 
-function watchmanRecReadDir(roots, {ignore, fileWatcher, exts}) {
+function watchmanRecReadDir(roots, {ignoreFilePath, fileWatcher, exts}) {
   const files = [];
   return Promise.map(roots, root => {
     return fileWatcher.getWatcherForRoot(root);
@@ -51,7 +50,7 @@ function watchmanRecReadDir(roots, {ignore, fileWatcher, exts}) {
             filePath
           );
 
-          if (!ignore(filePath)) {
+          if (!ignoreFilePath(filePath)) {
             files.push(filePath);
           }
           return false;

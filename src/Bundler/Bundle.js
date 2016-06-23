@@ -12,7 +12,7 @@ const _ = require('underscore');
 const base64VLQ = require('./base64-vlq');
 const BundleBase = require('./BundleBase');
 const UglifyJS = require('uglify-js');
-const ModuleTransport = require('../lib/ModuleTransport');
+const ModuleTransport = require('../utils/ModuleTransport');
 const Activity = require('../Activity');
 const crypto = require('crypto');
 
@@ -153,7 +153,7 @@ class Bundle extends BundleBase {
       const wpoResult = require('babel-core').transform(source, {
         retainLines: true,
         compact: true,
-        plugins: require('../transforms/whole-program-optimisations'),
+        plugins: require('../babel-plugins/whole-program-optimisations'),
         inputSourceMap: map,
       });
       Activity.endEvent(wpoActivity);
@@ -211,7 +211,7 @@ class Bundle extends BundleBase {
     };
 
     let line = 0;
-    super.getModules().forEach(function(module) {
+    super.getModules().forEach(module => {
       let map = module.map;
       if (module.virtual) {
         map = generateSourceMapForVirtualModule(module);
@@ -316,10 +316,10 @@ class Bundle extends BundleBase {
   }
 
   getJSModulePaths() {
-    return super.getModules().filter(function(module) {
+    return super.getModules().filter(module => {
       // Filter out non-js files. Like images etc.
       return !module.virtual;
-    }).map(function(module) {
+    }).map(module => {
       return module.sourcePath;
     });
   }
@@ -338,10 +338,10 @@ class Bundle extends BundleBase {
       '}',
       '</style>',
       '<h3> Module paths and transformed code: </h3>',
-      super.getModules().map(function(m) {
-        return '<div> <h4> Path: </h4>' + m.sourcePath + '<br/> <h4> Source: </h4>' +
+      super.getModules().map(module => {
+        return '<div> <h4> Path: </h4>' + module.sourcePath + '<br/> <h4> Source: </h4>' +
                '<code><pre class="collapsed" onclick="this.classList.remove(\'collapsed\')">' +
-               _.escape(m.code) + '</pre></code></div>';
+               _.escape(module.code) + '</pre></code></div>';
       }).join('\n'),
     ].join('\n');
   }

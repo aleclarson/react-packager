@@ -1,7 +1,7 @@
 'use strict';
 
 const Module = require('./Module');
-const getAssetDataFromName = require('./lib/getAssetDataFromName');
+const getAssetDataFromName = require('../utils/getAssetDataFromName');
 
 class AssetModule extends Module {
   constructor(...args) {

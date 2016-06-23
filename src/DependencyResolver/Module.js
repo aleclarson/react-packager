@@ -12,8 +12,8 @@ const inArray = require('in-array');
 const sync = require('sync');
 const path = require('path');
 
-const docblock = require('./DependencyGraph/docblock');
-const extractRequires = require('./lib/extractRequires');
+const docblock = require('../utils/docblock');
+const extractRequires = require('../utils/extractRequires');
 
 class Module {
 
@@ -155,7 +155,7 @@ class Module {
         const transformCode = this._transformCode;
         const codePromise = transformCode
             ? transformCode(this, content)
-            : Promise.resolve({code: content});
+            : Promise({code: content});
 
         return codePromise.then(({code, dependencies, asyncDependencies}) => {
           const {deps} = this._extractor(code);

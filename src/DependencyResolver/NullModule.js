@@ -1,6 +1,5 @@
 'use strict';
 
-const Promise = require('Promise');
 const Module = require('./Module');
 
 class NullModule extends Module {

@@ -9,12 +9,13 @@
 'use strict';
 
 const path = require('path');
-const Promise = require('Promise');
+const emptyFunction = require('emptyFunction');
+
 const Activity = require('../Activity');
-const DependencyGraph = require('../DependencyResolver/DependencyGraph');
-const replacePatterns = require('../DependencyResolver/lib/replacePatterns');
 const Polyfill = require('../DependencyResolver/Polyfill');
-const declareOpts = require('../lib/declareOpts');
+const declareOpts = require('../utils/declareOpts');
+const replacePatterns = require('../utils/replacePatterns');
+const DependencyGraph = require('../DependencyResolver/DependencyGraph');
 
 const validateOpts = declareOpts({
   internalRoots: {
@@ -35,7 +36,7 @@ const validateOpts = declareOpts({
   },
   getBlacklist: {
     type: 'function',
-    default: () => null,
+    default: emptyFunction,
   },
   polyfillModuleNames: {
     type: 'array',

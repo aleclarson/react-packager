@@ -12,16 +12,16 @@ const _ = require('underscore');
 const mm = require('micromatch');
 const url = require('url');
 const path = require('path');
-const steal = require ('steal');
 
 const Bundle = require('../Bundler/Bundle');
 const Bundler = require('../Bundler');
 const Activity = require('../Activity');
-const SERVER_API = require('./api');
 const AssetServer = require('../AssetServer');
-const declareOpts = require('../lib/declareOpts');
-const FileWatcher = require('../DependencyResolver/FileWatcher');
-const getPlatformExtension = require('../DependencyResolver/lib/getPlatformExtension');
+const FileWatcher = require('../FileWatcher');
+const declareOpts = require('../utils/declareOpts');
+const getPlatformExtension = require('../utils/getPlatformExtension');
+
+const SERVER_API = require('./api');
 
 const validateOpts = declareOpts({
   projectRoots: {
@@ -42,7 +42,7 @@ const validateOpts = declareOpts({
   },
   getBlacklist: {
     type: 'function',
-    default: () => null,
+    default: () => process.config.blacklist,
   },
   moduleFormat: {
     type: 'string',
@@ -239,21 +239,8 @@ class Server {
 
   buildBundleFromUrl(reqUrl) {
 
-    log.moat(1);
-    log.yellow(reqUrl);
-    log.moat(1);
-
     const options = this._getOptionsFromUrl(reqUrl);
-    const refresh = steal(options, 'refresh');
     const hash = JSON.stringify(options);
-
-    if (refresh) {
-      log.moat(1);
-      log.white('Refreshing module cache!');
-      log.moat(1);
-      this._bundler.refreshModuleCache();
-      this._bundles[hash] = null;
-    }
 
     if (!this._bundles[hash]) {
       this._lastBundle = hash;
@@ -448,15 +435,10 @@ class Server {
     const entryFile = path.join(dir, pathname) + '.' + platform + '.js';
     const sourceMapUrl = '/' + pathname + '.map' + reqUrl.slice(reqUrl.indexOf('?'));
 
-    // try to get the platform from the url
-    const platform = urlObj.query.platform ||
-      getPlatformExtension(pathname);
-
     return {
       platform,
       entryFile,
       sourceMapUrl,
-      refresh: urlObj.query.refresh === '',
       dev: this._getBoolOptionFromQuery(urlObj.query, 'dev', true),
       minify: this._getBoolOptionFromQuery(urlObj.query, 'minify'),
       hot: this._getBoolOptionFromQuery(urlObj.query, 'hot', false),

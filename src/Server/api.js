@@ -8,7 +8,6 @@
  */
 'use strict';
 
-const Promise = require('Promise');
 const url = require('url');
 const path = require('path');
 const syncFs = require('io/sync');

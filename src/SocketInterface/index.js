@@ -8,7 +8,6 @@
  */
 'use strict';
 
-const Promise = require('Promise');
 const SocketClient = require('./SocketClient');
 const SocketServer = require('./SocketServer');
 const _ = require('underscore');

@@ -1,14 +1,13 @@
 'use strict';
 
-const Promise = require('Promise');
 const debug = require('debug')('ReactNativePackager:DependencyGraph');
-const fs = require('graceful-fs');
+const fs = require('fs');
 const path = require('path');
 
 const readDir = Promise.ify(fs.readdir);
 const stat = Promise.ify(fs.stat);
 
-function nodeRecReadDir(roots, {ignore, exts}) {
+function nodeRecReadDir(roots, {ignoreFilePath, exts}) {
   const queue = roots.slice();
   const retFiles = [];
   const extPattern = new RegExp(
@@ -32,7 +31,7 @@ function nodeRecReadDir(roots, {ignore, exts}) {
       ]))
       .then(([files, stats]) => {
         files.forEach((filePath, i) => {
-          if (ignore(filePath)) {
+          if (ignoreFilePath(filePath)) {
             return;
           }
 

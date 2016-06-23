@@ -8,24 +8,25 @@
  */
 'use strict';
 
-const assert = require('assert');
 const fs = require('fs');
-const syncFs = require('io/sync');
 const path = require('path');
-const BundlesLayout = require('../BundlesLayout');
-const Cache = require('../DependencyResolver/Cache');
-const Transformer = require('../JSTransformer');
-const Resolver = require('../Resolver');
-const Bundle = require('./Bundle');
-const HMRBundle = require('./HMRBundle');
-const PrepackBundle = require('./PrepackBundle');
-const Activity = require('../Activity');
-const ModuleTransport = require('../lib/ModuleTransport');
-const declareOpts = require('../lib/declareOpts');
-const imageSize = require('image-size');
-const version = require('../../../../package.json').version;
+const assert = require('assert');
+const syncFs = require('io/sync');
+const emptyFunction = require('emptyFunction');
 
-const sizeOf = Promise.ify(imageSize);
+const Cache = require('../DependencyResolver/Cache');
+const Bundle = require('./Bundle');
+const version = require('../../package.json').version;
+const Activity = require('../Activity');
+const Resolver = require('../Resolver');
+const HMRBundle = require('./HMRBundle');
+const Transformer = require('../JSTransformer');
+const declareOpts = require('../utils/declareOpts');
+const BundlesLayout = require('../BundlesLayout');
+const PrepackBundle = require('./PrepackBundle');
+const ModuleTransport = require('../utils/ModuleTransport');
+
+const imageSize = Promise.ify(require('image-size'));
 const readFile = Promise.ify(fs.readFile);
 
 const validateOpts = declareOpts({
@@ -47,7 +48,7 @@ const validateOpts = declareOpts({
   },
   getBlacklist: {
     type: 'function',
-    default: () => null,
+    default: emptyFunction,
   },
   moduleFormat: {
     type: 'string',
@@ -268,7 +269,7 @@ class Bundler {
       const moduleId = this._resolver.getModuleForPath(entryFile);
       bundle.setMainModuleId(moduleId);
       bundle.setMainModuleName(moduleId);
-      return Promise.resolve({
+      return Promise({
         response: resolutionResponse,
         modulesToProcess: modules
       });
@@ -296,47 +297,35 @@ class Bundler {
         dependencies = moduleSystemDeps.concat(modulesToProcess);
       }
 
-      let bar;
-      if (process.stdout.isTTY) {
-        bar = new ProgressBar('transforming [:bar] :percent :current/:total', {
-          complete: '=',
-          incomplete: ' ',
-          width: 40,
-          total: dependencies.length,
-        });
-      }
-
-      return Promise.all(
-        dependencies.map(
-          module => {
-            return this._transformModule(
-              bundle,
-              module,
-              platform,
-              isDev,
-              hot,
-            ).then(transformed => {
-              if (bar) {
-                bar.tick();
-              }
-
-              return {
-                module,
-                transformed,
-              };
-            });
+      log.moat(1);
+      return Promise.map(dependencies, (module) => {
+        return this._transformModule(
+          bundle,
+          module,
+          platform,
+          isDev,
+          hot,
+        ).then(transformed => {
+          log.cyan.dim('•');
+          if (log.line.length >= 50) {
+            log.moat(0);
           }
-        )
-      ).then(transformedModules => Promise.all(
-        transformedModules.map(({module, transformed}) => {
-          return bundle.addModule(
+          return {
+            module,
+            transformed,
+          };
+        });
+      }).then(transformedModules => {
+        log.moat(1);
+        return Promise.map(transformedModules, ({ module, transformed }) =>
+          bundle.addModule(
             this._resolver,
             response,
             module,
             transformed,
-          );
-        })
-      ));
+          )
+        );
+      });
     }).then(() => {
       Activity.endEvent(transformEventId);
       bundle.finalize({runBeforeMainModule, runMainModule});
@@ -376,8 +365,7 @@ class Bundler {
       .then(namedModules => {
         log.moat(1);
         log.white('Total dependencies: ');
-        log.yellow(dependencies.length -
-          (response.numPrependedDependencies + moduleSystem.length));
+        log.yellow(response.dependencies.length);
         log.moat(1);
 
         syncFs.write(
@@ -414,6 +402,7 @@ class Bundler {
             });
           });
         });
+      })
     })
 
     .then(() => {
@@ -421,26 +410,6 @@ class Bundler {
       bundle.finalize({runBeforeMainModule, runMainModule, mainModuleId });
       return bundle;
     });
-  }
-
-  _transformModuleForHMR(module, platform) {
-    if (module.isAsset()) {
-      return this._generateAssetObjAndCode(module, platform).then(
-        ({asset, code}) => {
-          return {
-            code,
-          };
-        }
-      );
-    } else {
-      // TODO(martinb): pass non null main (t9527509)
-      return this._getTransformOptions(
-        {main: null, dev: true, platform: 'ios'}, // TODO(martinb): avoid hard-coding platform
-        {hot: true},
-      ).then(options => {
-        return this._transformer.loadFileAndTransform(module.path, options);
-      });
-    }
   }
 
   invalidateFile(filePath) {
@@ -508,6 +477,10 @@ class Bundler {
     );
   }
 
+  getGraphDebugInfo() {
+    return this._resolver.getDebugInfo();
+  }
+
   _transformModule(bundle, module, platform = null, dev = true, hot = false) {
 
     // TODO Strip null references entirely?
@@ -543,8 +516,24 @@ class Bundler {
     });
   }
 
-  getGraphDebugInfo() {
-    return this._resolver.getDebugInfo();
+  _transformModuleForHMR(module, platform) {
+    if (module.isAsset()) {
+      return this._generateAssetObjAndCode(module, platform).then(
+        ({asset, code}) => {
+          return {
+            code,
+          };
+        }
+      );
+    } else {
+      // TODO(martinb): pass non null main (t9527509)
+      return this._getTransformOptions(
+        {main: null, dev: true, platform: 'ios'}, // TODO(martinb): avoid hard-coding platform
+        {hot: true},
+      ).then(options => {
+        return this._transformer.loadFileAndTransform(module.path, options);
+      });
+    }
   }
 
   _generateAssetObjAndCode(module, platform = null) {
@@ -563,9 +552,9 @@ class Bundler {
     ].indexOf(path.extname(module.path).slice(1)) !== -1;
 
     return Promise.all([
-      isImage ? sizeOf(module.path) : null,
+      isImage ? imageSize(module.path) : null,
       this._assetServer.getAssetData(relPath, platform),
-    ]).then(function(res) {
+    ]).then(res => {
       const dimensions = res[0];
       const assetData = res[1];
       const asset = {
@@ -610,7 +599,7 @@ class Bundler {
           },
           config,
         ))
-      : Promise.resolve(null);
+      : Promise(null);
 
     return transformerOptions.then(overrides => {
       return {...options, ...overrides};
@@ -619,7 +608,7 @@ class Bundler {
 }
 
 function generateJSONModule(module) {
-  return readFile(module.path).then(function(data) {
+  return readFile(module.path).then(data => {
     const code = 'module.exports = ' + data.toString('utf8') + ';';
 
     return new ModuleTransport({

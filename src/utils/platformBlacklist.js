@@ -8,14 +8,15 @@
  */
 'use strict';
 
-require('./src/Resolver/polyfills/babelHelpers.js');
-global.__DEV__ = true;
-global.__fbBatchedBridgeConfig = {
-  remoteModuleConfig: [],
-  localModulesConfig: [],
+const platformBlacklists = {
+  web: '*.(ios|android).*',
+  ios: '*.(web|android).*',
+  android: '*.(web|ios).*',
 };
 
-global.Promise = require('Promise');
-global.regeneratorRuntime = require.requireActual('regenerator/runtime');
+const mm = require('micromatch');
 
-jest.setMock('ErrorUtils', require('ErrorUtils'));
+module.exports = (platform) => {
+  const blacklist = platformBlacklists[platform];
+  return blacklist && mm.makeRe('**/' + blacklist);
+};

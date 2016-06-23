@@ -10,7 +10,7 @@
 
 const _ = require('underscore');
 const BundleBase = require('./BundleBase');
-const ModuleTransport = require('../lib/ModuleTransport');
+const ModuleTransport = require('../utils/ModuleTransport');
 
 class HMRBundle extends BundleBase {
   constructor({sourceURLFn, sourceMappingURLFn}) {

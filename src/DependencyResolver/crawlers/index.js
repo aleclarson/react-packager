@@ -1,7 +1,5 @@
 'use strict';
 
-const Promise = require('Promise');
-
 const nodeCrawl = require('./node');
 const watchmanCrawl = require('./watchman');
 

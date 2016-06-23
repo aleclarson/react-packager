@@ -8,7 +8,6 @@
  */
 'use strict';
 
-const Promise = require('Promise');
 const Server = require('../Server');
 const bser = require('bser');
 const debug = require('debug')('ReactNativePackager:SocketServer');

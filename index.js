@@ -8,28 +8,21 @@
  */
 'use strict';
 
-require('./babelRegister')();
-
-useGracefulFs();
+require('./env');
 
 var debug = require('debug');
 var omit = require('underscore').omit;
-var Activity = require('./src/Activity');
-var globalConfig = require('./src/GlobalConfig');
+var Activity = require('./dist/Activity');
+
+exports.config = process.config;
 
 exports.createServer = createServer;
+
 exports.middleware = function(options) {
   var server = createServer(options);
   return server.processRequest.bind(server);
 };
 
-exports.Activity = Activity;
-exports.globalConfig = globalConfig;
-exports.getTransforms = Transforms.getAll;
-
-// Renamed "package" to "bundle". But maintain backwards
-// compat.
-exports.buildPackage =
 exports.buildBundle = function(options, bundleOptions) {
   var server = createNonPersistentServer(options);
   return server.buildBundle(bundleOptions)
@@ -48,7 +41,6 @@ exports.buildPrepackBundle = function(options, bundleOptions) {
     });
 };
 
-exports.buildPackageFromUrl =
 exports.buildBundleFromUrl = function(options, reqUrl) {
   var server = createNonPersistentServer(options);
   return server.buildBundleFromUrl(reqUrl)
@@ -73,16 +65,12 @@ exports.createClientFor = function(options) {
   }
   startSocketInterface();
   return (
-    require('./src/SocketInterface')
+    require('./dist/SocketInterface')
       .getOrCreateSocketFor(omit(options, ['verbose']))
   );
 };
 
-function useGracefulFs() {
-  var fs = require('fs');
-  var gracefulFs = require('graceful-fs');
-  gracefulFs.gracefulify(fs);
-}
+exports.Activity = Activity;
 
 function enableDebug() {
   // react-packager logs debug messages using the 'debug' npm package, and uses
@@ -106,7 +94,7 @@ function createServer(options) {
   }
 
   startSocketInterface();
-  var Server = require('./src/Server');
+  var Server = require('./dist/Server');
   return new Server(omit(options, ['verbose']));
 }
 
@@ -129,7 +117,7 @@ function startSocketInterface() {
     return;
   }
   didStartSocketInterface = true;
-  require('./src/SocketInterface').listenOnServerMessages();
+  require('./dist/SocketInterface').listenOnServerMessages();
 }
 
 if (require.main === module) { // used as entry point

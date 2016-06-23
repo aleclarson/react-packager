@@ -8,13 +8,12 @@
  */
 'use strict';
 
-const Promise = require('Promise');
-
-const crypto = require('crypto');
-const declareOpts = require('../lib/declareOpts');
 const fs = require('fs');
-const getAssetDataFromName = require('../DependencyResolver/lib/getAssetDataFromName');
 const path = require('path');
+const crypto = require('crypto');
+
+const declareOpts = require('../utils/declareOpts');
+const getAssetDataFromName = require('../utils/getAssetDataFromName');
 
 const stat = Promise.ify(fs.stat);
 const readDir = Promise.ify(fs.readdir);

@@ -8,20 +8,20 @@
  */
 'use strict';
 
-const Fastfs = require('./fastfs');
-const ModuleCache = require('../ModuleCache');
-const crawl = require('../crawlers');
-const getPlatformExtension = require('../lib/getPlatformExtension');
-const globalConfig = require('../../GlobalConfig');
-const ResolutionRequest = require('./ResolutionRequest');
-const ResolutionResponse = require('./ResolutionResponse');
-const HasteMap = require('./HasteMap');
-const DeprecatedAssetMap = require('./DeprecatedAssetMap');
-
+const emptyFunction = require('emptyFunction');
 const syncFs = require('io/sync');
 const sync = require('sync');
 const path = require('path');
 const util = require('util');
+
+const crawl = require('./crawlers');
+const Fastfs = require('./fastfs');
+const HasteMap = require('./HasteMap');
+const ModuleCache = require('./ModuleCache');
+const ResolutionRequest = require('./ResolutionRequest');
+const ResolutionResponse = require('./ResolutionResponse');
+const getPlatformExtension = require('../utils/getPlatformExtension');
+const makePlatformBlacklist = require('../utils/platformBlacklist');
 
 const ERROR_BUILDING_DEP_GRAPH = 'DependencyGraphError';
 
@@ -36,37 +36,35 @@ class DependencyGraph {
     projectRoots,
     projectExts,
     assetServer,
-    activity,
-    getBlacklist,
+    activity = defaultActivity,
+    getBlacklist = emptyFunction,
     fileWatcher,
     providesModuleNodeModules,
-    platforms,
-    preferNativePlatform,
+    platforms = [],
+    preferNativePlatform = false,
     cache,
     mocksPattern,
     extractRequires,
     transformCode,
-    shouldThrowOnUnresolvedErrors = () => true,
+    shouldThrowOnUnresolvedErrors = emptyFunction.thatReturnsTrue,
   }) {
     this._opts = {
       internalRoots,
       projectRoots,
       projectExts,
-      activity: activity || defaultActivity,
-      getBlacklist: getBlacklist || (() => null),
+      assetServer,
+      activity,
       fileWatcher,
       providesModuleNodeModules,
-      platforms: platforms || [],
-      preferNativePlatform: preferNativePlatform || false,
+      platforms,
+      preferNativePlatform,
+      cache,
       mocksPattern,
       extractRequires,
-      shouldThrowOnUnresolvedErrors,
       transformCode,
+      shouldThrowOnUnresolvedErrors,
+      ignoreFilePath: getBlacklist() || emptyFunction.thatReturnsFalse,
     };
-
-    this._cache = cache;
-    this._assetServer = assetServer;
-    this._ignoreFilePath = this._opts.getBlacklist() || (() => false);
   }
 
   load() {
@@ -74,7 +72,8 @@ class DependencyGraph {
       return this._loading;
     }
 
-    const {activity} = this._opts;
+    const { ignoreFilePath, fileWatcher, activity } = this._opts;
+
     const crawlActivity = activity.startEvent('crawl filesystem');
 
     const roots = this._mergeArrays([
@@ -84,13 +83,13 @@ class DependencyGraph {
 
     const exts = this._mergeArrays([
       this._opts.projectExts,
-      this._assetServer._assetExts,
+      this._opts.assetServer._assetExts,
     ]);
 
     this._crawling = crawl(roots, {
-      exts: exts,
-      ignore: this._ignoreFilePath,
-      fileWatcher: this._opts.fileWatcher,
+      exts,
+      ignoreFilePath,
+      fileWatcher,
     });
 
     this._crawling.then(() =>
@@ -99,11 +98,11 @@ class DependencyGraph {
     this._fastfs = new Fastfs(
       'find .js files',
       roots,
-      this._opts.fileWatcher,
+      fileWatcher,
       {
-        ignore: this._ignoreFilePath,
+        activity,
+        ignoreFilePath,
         crawling: this._crawling,
-        activity: activity,
       }
     );
 
@@ -113,55 +112,54 @@ class DependencyGraph {
 
     this._moduleCache = new ModuleCache({
       fastfs: this._fastfs,
-      cache: this._cache,
+      cache: this._opts.cache,
       extractRequires: this._opts.extractRequires,
       transformCode: this._opts.transformCode,
     });
 
     this._hasteMap = new HasteMap({
-      ignore: this._ignoreFilePath,
       fastfs: this._fastfs,
       extensions: this._opts.projectExts,
       moduleCache: this._moduleCache,
       preferNativePlatform: this._opts.preferNativePlatform,
+      ignoreFilePath,
     });
 
-    this._loading = this._fastfs.build()
-      .then(() => {
-        const hasteActivity = activity.startEvent('find haste modules');
-        return this._hasteMap.build().then(() => {
-          const hasteModules = this._hasteMap._map;
-          const hasteModuleNames = Object.keys(hasteModules);
+    return this._loading = this._fastfs.build()
 
-          const json = {};
-          hasteModuleNames.forEach(moduleName => {
-            const map = hasteModules[moduleName];
-            const mod = map.generic || Object.keys(map)[0];
-            if (mod && mod.path) {
-              json[moduleName] = path.relative(lotus.path, mod.path);
-            }
-          });
+    .then(() => {
+      const hasteActivity = activity.startEvent('find haste modules');
+      return this._hasteMap.build().then(() => {
+        const hasteModules = this._hasteMap._map;
+        const hasteModuleNames = Object.keys(hasteModules);
 
-          syncFs.write(
-            lotus.path + '/.ReactNativeHasteMap.json',
-            JSON.stringify(json, null, 2)
-          );
-
-          log.moat(1);
-          log.white('Haste modules: ');
-          log.cyan(hasteModuleNames.length);
-          log.moat(1);
-          activity.endEvent(hasteActivity);
+        const json = {};
+        hasteModuleNames.forEach(moduleName => {
+          const map = hasteModules[moduleName];
+          const mod = map.generic || Object.keys(map)[0];
+          if (mod && mod.path) {
+            json[moduleName] = path.relative(lotus.path, mod.path);
+          }
         });
-      })
-      .then(() => {
-        const assetActivity = activity.startEvent('find assets');
-        this._assetServer._build(this._fastfs);
-        activity.endEvent(assetActivity);
-      });
-    });
 
-    return this._loading;
+        syncFs.write(
+          lotus.path + '/.ReactNativeHasteMap.json',
+          JSON.stringify(json, null, 2)
+        );
+
+        log.moat(1);
+        log.white('Haste modules: ');
+        log.cyan(hasteModuleNames.length);
+        log.moat(1);
+        activity.endEvent(hasteActivity);
+      });
+    })
+
+    .then(() => {
+      const assetActivity = activity.startEvent('find assets');
+      this._opts.assetServer._build(this._fastfs);
+      activity.endEvent(assetActivity);
+    });
   }
 
   /**
@@ -191,16 +189,22 @@ class DependencyGraph {
     return this.load().then(() => {
       platform = this._getRequestPlatform(entryPath, platform);
       const absPath = this._getAbsolutePath(entryPath);
+
+      const platformBlacklist = makePlatformBlacklist(platform);
+      const ignoreFilePath = (filePath) =>
+        platformBlacklist.test(filePath) ||
+          this._opts.ignoreFilePath(filePath);
+
       const req = new ResolutionRequest({
         platform,
+        ignoreFilePath,
         preferNativePlatform: this._opts.preferNativePlatform,
         projectExts: this._opts.projectExts,
         entryPath: absPath,
         fastfs: this._fastfs,
         hasteMap: this._hasteMap,
-        assetServer: this._assetServer,
         moduleCache: this._moduleCache,
-        ignoreFilePath: this._opts.getBlacklist(platform),
+        assetServer: this._opts.assetServer,
         shouldThrowOnUnresolvedErrors: this._opts.shouldThrowOnUnresolvedErrors,
       });
 
@@ -273,7 +277,7 @@ class DependencyGraph {
 
   _processFileChange(type, filePath, root, fstat) {
     const absPath = path.join(root, filePath);
-    if (!this._ignoreFilePath(absPath)) {
+    if (!this._opts.ignoreFilePath(absPath)) {
       return;
     }
 

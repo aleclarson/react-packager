@@ -8,10 +8,6 @@
  */
 'use strict';
 
-const Bundle = require('../Bundler/Bundle');
-const PrepackBundle = require('../Bundler/PrepackBundle');
-const bser = require('bser');
-const debug = require('debug')('ReactNativePackager:SocketClient');
 const fs = require('fs');
 const net = require('net');
 const bser = require('bser');

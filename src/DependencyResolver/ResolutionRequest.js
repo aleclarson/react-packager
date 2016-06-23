@@ -16,10 +16,9 @@ const syncFs = require('io/sync');
 const path = require('path');
 const util = require('util');
 
-const getAssetDataFromName = require('../lib/getAssetDataFromName');
-const globalConfig = require('../../GlobalConfig');
-const NullModule = require('../NullModule');
-const Module = require('../Module');
+const getAssetDataFromName = require('../utils/getAssetDataFromName');
+const NullModule = require('./NullModule');
+const Module = require('./Module');
 
 class ResolutionRequest {
   constructor({
@@ -73,7 +72,7 @@ class ResolutionRequest {
     });
   }
 
-  getOrderedDependencies(response, mocksPattern) {
+  getOrderedDependencies(response, mocksPattern, recursive = true) {
     return this._getAllMocks(mocksPattern).then(allMocks => {
       const entry = this._moduleCache.getModule(this._entryPath);
       const mocks = Object.create(null);
@@ -84,8 +83,6 @@ class ResolutionRequest {
 
       let failed = false;
       const collect = (mod) => {
-
-        response.pushDependency(mod);
 
         log.cyan.dim('•');
         if (log.line.length == 50) {
@@ -220,7 +217,7 @@ class ResolutionRequest {
   }
 
   getAsyncDependencies(response) {
-    return Promise().then(() => {
+    return Promise.try(() => {
       const mod = this._moduleCache.getModule(this._entryPath);
       return mod.getAsyncDependencies().then(bundles =>
         Promise.all(bundles.map(bundle =>
@@ -246,13 +243,13 @@ class ResolutionRequest {
         return this._getNullModule(oldModuleName, fromModule);
       }
 
-      if (globalConfig.redirect[toModuleName] !== undefined) {
+      if (process.config.redirect[toModuleName] !== undefined) {
         let oldModuleName = toModuleName;
-        toModuleName = globalConfig.redirect[toModuleName];
+        toModuleName = process.config.redirect[toModuleName];
         if (toModuleName === false) {
           return this._getNullModule(oldModuleName, fromModule);
         }
-        toModuleName = globalConfig.resolve(toModuleName);
+        toModuleName = process.config.resolve(toModuleName);
       }
 
       return this._tryResolve(
@@ -492,7 +489,6 @@ class ResolutionRequest {
     });
 
     promise.fail(error => {
-      console.log('Failed to resolve: ' + toModuleName);
       if (error.type !== 'UnableToResolveError') {
         throw error;
       }

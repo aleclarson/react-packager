@@ -1,7 +1,7 @@
 /* eslint strict:0 */
 
 let loadBundlesOnNative = (bundles) =>
-  new Promise((resolve) =>
+  Promise.resolve(resolve =>
     require('NativeModules').RCTBundlesLoader.loadBundles(bundles, resolve));
 
 let requestedBundles = Object.create(null);

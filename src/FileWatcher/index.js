@@ -10,14 +10,13 @@
 
 const EventEmitter  = require('events').EventEmitter;
 const sane = require('sane');
-const Promise = require('Promise');
 const exec = require('child_process').exec;
 
 const MAX_WAIT_TIME = 120000;
 
 // TODO(amasad): can we use watchman version command instead?
-const detectingWatcherClass = Promise.resolve(function(resolve) {
-  exec('which watchman', function(err, out) {
+const detectingWatcherClass = Promise.resolve(resolve => {
+  exec('which watchman', (err, out) => {
     if (err || out.length === 0) {
       resolve(sane.NodeWatcher);
     } else {
@@ -90,18 +89,18 @@ class FileWatcher extends EventEmitter {
 }
 
 function createWatcher(rootConfig) {
-  return detectingWatcherClass.then(function(Watcher) {
+  return detectingWatcherClass.then(Watcher => {
     const watcher = new Watcher(rootConfig.dir, {
       glob: rootConfig.globs,
       dot: false,
     });
 
-    return Promise.resolve(function(resolve, reject) {
-      const rejectTimeout = setTimeout(function() {
+    return Promise.resolve((resolve, reject) => {
+      const rejectTimeout = setTimeout(() => {
         reject(new Error(timeoutMessage(Watcher)));
       }, MAX_WAIT_TIME);
 
-      watcher.once('ready', function() {
+      watcher.once('ready', () => {
         clearTimeout(rejectTimeout);
         resolve(watcher);
       });

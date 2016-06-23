@@ -11,11 +11,11 @@
 const Activity = require('../Activity');
 
 const _ = require('underscore');
-const declareOpts = require('../lib/declareOpts');
+const declareOpts = require('../utils/declareOpts');
 const fs = require('fs');
-const getCacheFilePath = require('../DependencyResolver/Cache/lib/getCacheFilePath');
-const loadCacheSync = require('../DependencyResolver/Cache/lib/loadCacheSync');
-const version = require('../../../../package.json').version;
+const getCacheFilePath = require('../DependencyResolver/Cache/getCacheFilePath');
+const loadCacheSync = require('../DependencyResolver/Cache/loadCacheSync');
+const version = require('../../package.json').version;
 const path = require('path');
 const tmpdir = require('os').tmpDir();
 
