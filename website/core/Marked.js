@@ -821,7 +821,6 @@ Parser.prototype.tok = function() {
       return (
         <Header
           level={this.token.depth}
-          path={this.options.path}
           toSlug={this.token.text}>
           {this.inline.output(this.token.text)}
         </Header>
