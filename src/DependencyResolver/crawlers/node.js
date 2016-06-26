@@ -1,11 +1,8 @@
 'use strict';
 
 const debug = require('debug')('ReactNativePackager:DependencyGraph');
-const fs = require('fs');
-const path = require('path');
 
-const readDir = Promise.ify(fs.readdir);
-const stat = Promise.ify(fs.stat);
+const path = require('path');
 
 function nodeRecReadDir(roots, {ignoreFilePath, exts}) {
   const queue = roots.slice();
@@ -20,15 +17,17 @@ function nodeRecReadDir(roots, {ignoreFilePath, exts}) {
       return Promise();
     }
 
-    return readDir(currDir)
+    return fs.async.readDir(currDir)
       .then(files => files.map(f => path.join(currDir, f)))
-      .then(files => Promise.all(
-        files.map(f => stat(f).fail(handleBrokenLink))
-      ).then(stats => [
-        // Remove broken links.
-        files.filter((file, i) => !!stats[i]),
-        stats.filter(Boolean),
-      ]))
+      .then(files => {
+        return Promise.map(f =>
+          fs.async.stat(f).fail(handleBrokenLink)
+        ).then(stats => [
+          // Remove broken links.
+          files.filter((file, i) => !!stats[i]),
+          stats.filter(Boolean),
+        ])
+      })
       .then(([files, stats]) => {
         files.forEach((filePath, i) => {
           if (ignoreFilePath(filePath)) {

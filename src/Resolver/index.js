@@ -65,7 +65,7 @@ const getDependenciesValidateOpts = declareOpts({
     type: 'string',
     required: false,
   },
-  isUnbundle: {
+  unbundle: {
     type: 'boolean',
     default: false
   },
@@ -116,14 +116,13 @@ class Resolver {
     return this._depGraph.getModuleForPath(entryFile);
   }
 
-  getDependencies(main, options) {
-    const opts = getDependenciesValidateOpts(options);
-
-    return this._depGraph.getDependencies(
-      main,
-      opts.platform,
-      opts.recursive,
-    ).then(resolutionResponse => {
+  getDependencies(entryPath, options) {
+    const {platform, recursive} = getDependenciesValidateOpts(options);
+    return this._depGraph.getDependencies({
+      entryPath,
+      platform,
+      recursive,
+    }).then(resolutionResponse => {
       this._getPolyfillDependencies().reverse().forEach(
         polyfill => resolutionResponse.prependDependency(polyfill)
       );
@@ -139,7 +138,7 @@ class Resolver {
         ? path.join(__dirname, 'polyfills/prelude_dev.js')
         : path.join(__dirname, 'polyfills/prelude.js');
 
-    const moduleSystem = opts.isUnbundle
+    const moduleSystem = opts.unbundle
         ? path.join(__dirname, 'polyfills/require-unbundle.js')
         : path.join(__dirname, 'polyfills/require.js');
 
@@ -147,10 +146,9 @@ class Resolver {
       prelude,
       moduleSystem
     ].map(moduleName => new Polyfill({
-      path: moduleName,
+      file: moduleName,
       id: moduleName,
       dependencies: [],
-      isPolyfill: true,
     }));
   }
 
@@ -167,10 +165,9 @@ class Resolver {
 
     return polyfillModuleNames.map(
       (polyfillModuleName, idx) => new Polyfill({
-        path: polyfillModuleName,
+        file: polyfillModuleName,
         id: polyfillModuleName,
         dependencies: polyfillModuleNames.slice(0, idx),
-        isPolyfill: true,
       })
     );
   }
@@ -191,18 +188,15 @@ class Resolver {
       const resolvedDeps = Object.create(null);
       const resolvedDepsArr = [];
 
-      return Promise.all(
-        resolutionResponse.getResolvedDependencyPairs(module).map(
-          ([depName, depModule]) => {
-            if (depModule) {
-              return depModule.getName().then(name => {
-                resolvedDeps[depName] = name;
-                resolvedDepsArr.push(name);
-              });
-            }
-          }
-        )
-      ).then(() => {
+      const pairs = resolutionResponse.getResolvedDependencyPairs(module);
+      return Promise.map(pairs, ([depName, depModule]) => {
+        if (depModule) {
+          return depModule.getName().then(name => {
+            resolvedDeps[depName] = name;
+            resolvedDepsArr.push(name);
+          });
+        }
+      }).then(() => {
         const relativizeCode = (codeMatch, pre, quot, depName, post) => {
           const depId = resolvedDeps[depName];
           if (depId) {

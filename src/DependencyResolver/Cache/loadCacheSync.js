@@ -8,20 +8,18 @@
  */
 'use strict';
 
-const fs = require('fs');
-
 function loadCacheSync(cachePath) {
-  if (!fs.existsSync(cachePath)) {
+  if (!fs.sync.isFile(cachePath)) {
     return Object.create(null);
   }
 
   try {
-    return JSON.parse(fs.readFileSync(cachePath));
+    return JSON.parse(fs.sync.read(cachePath));
   } catch (e) {
     if (e instanceof SyntaxError) {
       console.warn('Unable to parse cache file. Will clear and continue.');
       try {
-        fs.unlinkSync(cachePath);
+        fs.sync.remove(cachePath);
       } catch (err) {
         // Someone else might've deleted it.
       }

@@ -17,7 +17,7 @@ class BundleBase {
     this._finalized = false;
     this._modules = [];
     this._assets = [];
-    this._mainModuleId = this._mainModuleName = undefined;
+    this._mainModuleId = undefined;
   }
 
   isEmpty() {
@@ -30,14 +30,6 @@ class BundleBase {
 
   setMainModuleId(moduleId) {
     this._mainModuleId = moduleId;
-  }
-
-  getMainModuleName() {
-    return this._mainModuleName;
-  }
-
-  setMainModuleName(moduleName) {
-    this._mainModuleName = moduleName;
   }
 
   addModule(module) {
@@ -90,7 +82,6 @@ class BundleBase {
       modules: this._modules,
       assets: this._assets,
       mainModuleId: this.getMainModuleId(),
-      mainModuleName: this.getMainModuleName(),
     };
   }
 
@@ -98,7 +89,6 @@ class BundleBase {
     bundle._assets = json.assets;
     bundle._modules = json.modules;
     bundle.setMainModuleId(json.mainModuleId);
-    bundle.setMainModuleName(json.mainModuleName);
 
     Object.freeze(bundle._modules);
     Object.seal(bundle._modules);

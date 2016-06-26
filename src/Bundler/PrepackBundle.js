@@ -67,7 +67,7 @@ class PrepackBundle {
     var batchedBridgeConfig = (options && options.batchedBridgeConfig) || null;
     if (typeof batchedBridgeConfig === 'string') {
       batchedBridgeConfig = JSON.parse(
-        fs.readFileSync(batchedBridgeConfig, 'utf-8')
+        fs.sync.read(batchedBridgeConfig)
       );
     }
 

@@ -139,7 +139,7 @@ class HasteMap {
 
     if (existingModule && existingModule.path !== mod.path) {
 
-      // Allow modules to override their packages.
+      // Force modules to override their packages.
       if (existingModule.type === 'Package') {
         if (mod.type === 'Module') {
           moduleMap[modulePlatform] = mod;

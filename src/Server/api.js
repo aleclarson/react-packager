@@ -10,8 +10,6 @@
 
 const url = require('url');
 const path = require('path');
-const syncFs = require('io/sync');
-const asyncFs = require('io/async');
 
 const Activity = require('../Activity');
 
@@ -22,7 +20,7 @@ module.exports = {
   'read/**': readSpecificFile,
   'assets/**': readSpecificAsset,
   'watcher/**': processFileEvent,
-  'onchange': onFileChange,
+  'onchange': processOnChangeRequest,
   'profile': dumpProfileInfo,
   'debug': debug,
   'debug/lastBundle': debugLastBundle,
@@ -31,14 +29,13 @@ module.exports = {
 };
 
 function readBundle(req, res) {
+  const options = this._getOptionsFromUrl(req.url);
   return this.buildBundleFromUrl(req.url)
   .then(bundle => {
     const bundleSource = bundle.getSource({
-      inlineSourceMap: false,
-      minify: false
-      // inlineSourceMap: options.inlineSourceMap,
-      // minify: options.minify,
-      // dev: options.dev,
+      inlineSourceMap: options.inlineSourceMap,
+      minify: options.minify,
+      dev: options.dev,
     });
 
     res.setHeader('Content-Type', 'application/javascript');
@@ -54,11 +51,12 @@ function readBundle(req, res) {
 }
 
 function readMap(req, res) {
+  const options = this._getOptionsFromUrl(req.url);
   return this.buildBundleFromUrl(req.url)
   .then(bundle => {
-    var sourceMap = bundle.getSourceMap({
-      // minify: options.minify,
-      // dev: options.dev,
+    let sourceMap = bundle.getSourceMap({
+      minify: options.minify,
+      dev: options.dev,
     });
     if (typeof sourceMap !== 'string') {
       sourceMap = JSON.stringify(sourceMap);
@@ -71,7 +69,7 @@ function readMap(req, res) {
 function readAssets(req, res) {
   return this.buildBundleFromUrl(req.url)
   .then(bundle => {
-    var assets = bundle.getAssets();
+    let assets = bundle.getAssets();
     assets = JSON.stringify(assets);
     res.setHeader('Content-Type', 'application/json');
     res.end(assets);
@@ -81,7 +79,7 @@ function readAssets(req, res) {
 function readSpecificFile(req, res) {
   const urlObj = url.parse(req.url, true);
   const filePath = urlObj.pathname.replace(/^\/read/, '');
-  return asyncFs.read(filePath)
+  return fs.async.read(filePath)
   .then(contents => res.end(contents))
   .fail(error => {
     res.writeHead(500);
@@ -113,13 +111,13 @@ function processFileEvent(req, res) {
   const event = urlObj.query.event;
   const force = urlObj.query.force === 'true';
   const absPath = urlObj.pathname.replace(/^\/watcher/, '');
-  const fs = this._bundler._resolver._depGraph._fastfs;
+  const fastfs = this._bundler._resolver._depGraph._fastfs;
 
-  const file = fs._fastPaths[absPath];
-  const fstat = file && event !== 'delete' && syncFs.stats(absPath);
+  const file = fastfs._fastPaths[absPath];
+  const fstat = file && event !== 'delete' && fs.sync.stats(absPath);
 
   if (force || file || event === 'add') {
-    const root = fs._getRoot(absPath);
+    const root = fastfs._getRoot(absPath);
     if (!root) {
       log.moat(1);
       log.white('Invalid root: ');
@@ -137,12 +135,14 @@ function processFileEvent(req, res) {
   res.end();
 }
 
-function onFileChange(req, res) {
+function processOnChangeRequest(req, res) {
   const watchers = this._changeWatchers;
+
   watchers.push({
     req: req,
     res: res,
   });
+
   req.on('close', () => {
     for (let i = 0; i < watchers.length; i++) {
       if (watchers[i] && watchers[i].req === req) {
@@ -158,7 +158,7 @@ function dumpProfileInfo(req, res) {
   const dumpName = '/tmp/dump_' + Date.now() + '.json';
   const prefix = process.env.TRACE_VIEWER_PATH || '';
   const cmd = path.join(prefix, 'trace2html') + ' ' + dumpName;
-  fs.writeFileSync(dumpName, req.rawBody);
+  fs.sync.write(dumpName, req.rawBody);
   exec(cmd, error => {
     if (error) {
       if (error.code === 127) {
@@ -190,14 +190,14 @@ function dumpProfileInfo(req, res) {
 }
 
 function debug(req, res) {
-  var ret = '<!doctype html>';
+  let ret = '<!doctype html>';
   ret += '<div><a href="/debug/bundles">Cached Bundles</a></div>';
   ret += '<div><a href="/debug/graph">Dependency Graph</a></div>';
   res.end(ret);
 }
 
 function debugLastBundle(req, res) {
-  var ret = '<!doctype html>';
+  let ret = '<!doctype html>';
   ret += '<h1> Most Recent Bundle </h1>';
   const bundle = this._bundles[this._lastBundle];
   const options = JSON.parse(this._lastBundle);
@@ -213,9 +213,9 @@ function debugLastBundle(req, res) {
       options.platform
     ).then(
       (resolved) => {
-        var newline = '<br/>';
+        const newline = '<br/>';
         Object.keys(resolved._mappings).forEach(hash => {
-          var mappings = resolved._mappings[hash];
+          const mappings = resolved._mappings[hash];
           ret += hash + newline;
           if (mappings.length === 0) {
             ret += 'No dependencies found!' + newline;
@@ -240,16 +240,15 @@ function debugLastBundle(req, res) {
 }
 
 function debugBundles(req, res) {
-  var ret = '<!doctype html>';
+  let ret = '<!doctype html>';
   ret += '<h1> Cached Bundles </h1>';
-  Promise.all(
-    Object.keys(this._bundles).map(hash => {
-      return this._bundles[hash].then(p => {
-        ret += '<div><h2>' + hash + '</h2>';
-        ret += p.getDebugInfo();
-      });
-    })
-  ).then(
+  const hashes = Object.keys(this._bundles);
+  Promise.map(hashes, (hash) => {
+    return this._bundles[hash].then(p => {
+      ret += '<div><h2>' + hash + '</h2>';
+      ret += p.getDebugInfo();
+    });
+  }).then(
     () => res.end(ret),
     e => {
       res.writeHead(500);
@@ -260,7 +259,7 @@ function debugBundles(req, res) {
 }
 
 function debugGraph(req, res) {
-  var ret = '<!doctype html>';
+  let ret = '<!doctype html>';
   ret += '<h1> Dependency Graph </h2>';
   ret += this._bundler.getGraphDebugInfo();
   res.end(ret);

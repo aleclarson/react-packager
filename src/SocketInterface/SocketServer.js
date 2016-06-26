@@ -8,11 +8,12 @@
  */
 'use strict';
 
-const Server = require('../Server');
-const bser = require('bser');
 const debug = require('debug')('ReactNativePackager:SocketServer');
-const fs = require('fs');
+
+const bser = require('bser');
 const net = require('net');
+
+const Server = require('../Server');
 
 const MAX_IDLE_TIME = 30 * 1000;
 const MAX_STARTUP_TIME = 5 * 60 * 1000;
@@ -41,7 +42,7 @@ class SocketServer {
         resolve(this);
         process.on('exit', code => {
           debug('exit code:', code);
-          fs.unlinkSync(sockPath);
+          fs.sync.remove(sockPath);
         });
       });
     });

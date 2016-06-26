@@ -110,18 +110,6 @@ class ModuleCache {
     delete this._packageCache[id];
   }
 
-  refresh() {
-    log.moat(1);
-    log.red('Refreshing the module cache!');
-    log.moat(1);
-    sync.each(this._moduleCache, (module) => {
-      module._dependers = Object.create(null);
-      module._dependencies = Object.create(null);
-    });
-    this._moduleCache = Object.create(null);
-    this._cache.reset();
-  }
-
   _processFileChange(type, filePath, root) {
     const id = path.join(root, filePath).toLowerCase();
     if (this._moduleCache[id]) {

@@ -63,7 +63,6 @@ const getBabelRC = (function() {
   }
 })();
 
-
 /**
  * Given a filename and options, build a Babel
  * config object with the appropriate plugins.

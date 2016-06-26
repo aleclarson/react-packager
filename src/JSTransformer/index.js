@@ -10,8 +10,7 @@
 
 const debug = require('debug')('ReactNativePackager:JStransformer');
 
-const fs = require('fs');
-const path = require('path');
+const os = require('os');
 const temp = require('temp');
 const util = require('util');
 const workerFarm = require('worker-farm');
@@ -63,6 +62,23 @@ const validateOpts = declareOpts({
   },
 });
 
+const maxConcurrentWorkers = ((cores, override) => {
+  if (override) {
+    return Math.min(cores, override);
+  }
+
+  if (cores < 3) {
+    return cores;
+  }
+  if (cores < 8) {
+    return Math.floor(cores * 0.75);
+  }
+  if (cores < 24) {
+    return Math.floor(3/8 * cores + 3); // between cores *.75 and cores / 2
+  }
+  return cores / 2;
+})(os.cpus().length, process.env.REACT_NATIVE_MAX_WORKERS);
+
 class Transformer {
   constructor(options) {
     const opts = this._opts = validateOpts(options);
@@ -73,14 +89,13 @@ class Transformer {
     this._transformModulePath = opts.transformModulePath;
 
     if (opts.transformModulePath != null) {
-      let transformer, transformModulePath;
+      let transformer;
 
       if (opts.disableInternalTransforms) {
         transformer = opts.transformModulePath;
       } else {
         transformer = this._workerWrapperPath = temp.path();
-        transformModulePath = JSON.stringify(String(opts.transformModulePath));
-        fs.writeFileSync(
+        fs.sync.write(
           this._workerWrapperPath,
           `
           module.exports = require(${JSON.stringify(require.resolve('./worker'))});
@@ -92,6 +107,7 @@ class Transformer {
       this._workers = workerFarm({
         autoStart: true,
         maxConcurrentCallsPerWorker: 1,
+        maxConcurrentWorkers: maxConcurrentWorkers,
         maxCallsPerWorker: MAX_CALLS_PER_WORKER,
         maxCallTime: opts.transformTimeoutInterval,
         maxRetries: MAX_RETRIES,
@@ -105,7 +121,7 @@ class Transformer {
     this._workers && workerFarm.end(this._workers);
     if (this._workerWrapperPath &&
         typeof this._workerWrapperPath === 'string') {
-      fs.unlink(this._workerWrapperPath, () => {}); // we don't care about potential errors here
+      fs.sync.remove(this._workerWrapperPath);
     }
   }
 
@@ -115,7 +131,7 @@ class Transformer {
 
   loadFileAndTransform(filePath, options) {
     if (this._transform == null) {
-      return Promise.reject(new Error('No transform module'));
+      return Promise.reject(new Error('No transfrom module'));
     }
 
     debug('transforming file', filePath);
@@ -173,7 +189,7 @@ class Transformer {
             throw formatError(err, filePath);
           });
         })
-      );
+    );
   }
 }
 

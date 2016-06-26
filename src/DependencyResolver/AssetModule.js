@@ -20,10 +20,6 @@ class AssetModule extends Module {
     return Promise([]);
   }
 
-  getAsyncDependencies() {
-    return Promise([]);
-  }
-
   read() {
     return Promise({});
   }

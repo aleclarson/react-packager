@@ -8,17 +8,17 @@
  */
 'use strict';
 
-const fs = require('fs');
-const net = require('net');
-const bser = require('bser');
-const path  = require('path');
 const debug = require('debug')('ReactNativePackager:SocketClient');
-const tmpdir = require('os').tmpdir();
+
+const bser = require('bser');
+const path = require('path');
+const net = require('net');
+const os = require('os');
 
 const Bundle = require('../Bundler/Bundle');
 const PrepackBundle = require('../Bundler/PrepackBundle');
 
-const LOG_PATH = path.join(tmpdir, 'react-packager.log');
+const LOG_PATH = path.join(os.tmpdir(), 'react-packager.log');
 
 class SocketClient {
   static create(sockPath) {
@@ -55,7 +55,7 @@ class SocketClient {
     this._sock.on('close', () => {
       if (!this._closing) {
         const terminate = (result) => {
-          const sockPathExists = fs.existsSync(sockPath);
+          const sockPathExists = fs.sync.isFile(sockPath);
           throw new Error(
             'Server closed unexpectedly.\n' +
             'Server ping connection attempt result: ' + result + '\n' +
@@ -162,8 +162,8 @@ function uid(len) {
 }
 
 function getServerLogs() {
-  if (fs.existsSync(LOG_PATH)) {
-    return '\nServer logs:\n' + fs.readFileSync(LOG_PATH, 'utf8');
+  if (fs.sync.isFile(LOG_PATH)) {
+    return '\nServer logs:\n' + fs.sync.read(LOG_PATH);
   }
 
   return '';
