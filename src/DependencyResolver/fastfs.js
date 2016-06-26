@@ -11,8 +11,7 @@
 const File = require('./File');
 const isDescendant = require('../utils/isDescendant');
 
-const Path = require('path');
-const syncFs = require('io/sync');
+const path = require('path');
 const {EventEmitter} = require('events');
 
 const NOT_FOUND_IN_ROOTS = 'NotFoundInRootsError';
@@ -38,11 +37,8 @@ class Fastfs extends EventEmitter {
         fastfsActivity = activity.startEvent(this._name);
       }
       files.forEach(filePath => {
-        if (!syncFs.isFile(filePath)) {
-          debugger;
-        }
         const newFile = new File(filePath, { isDir: false });
-        const parent = this._fastPaths[Path.dirname(filePath)];
+        const parent = this._fastPaths[path.dirname(filePath)];
         if (parent) {
           parent.addChild(newFile);
         } else {
@@ -91,7 +87,7 @@ class Fastfs extends EventEmitter {
   findFilesByName(name, { ignoreFilePath } = {}) {
     return this.getAllFiles()
     .filter(file => {
-      if (name !== Path.basename(file.path)) {
+      if (name !== path.basename(file.path)) {
         return false;
       }
       return !ignoreFilePath || !ignoreFilePath(file.path);
@@ -168,7 +164,7 @@ class Fastfs extends EventEmitter {
 
     return Object.keys(dirFile.children)
       .filter(name => name.match(pattern))
-      .map(name => Path.join(dirFile.path, name));
+      .map(name => path.join(dirFile.path, name));
   }
 
   _getRoot(filePath) {
@@ -197,7 +193,7 @@ class Fastfs extends EventEmitter {
   }
 
   _getFile(filePath) {
-    filePath = Path.normalize(filePath);
+    filePath = path.normalize(filePath);
     var file = this._fastPaths[filePath];
 
     if (!file) {
@@ -237,7 +233,7 @@ class Fastfs extends EventEmitter {
       return;
     }
 
-    const absPath = Path.join(root, filePath);
+    const absPath = path.join(root, filePath);
     if (!this._getRoot(absPath) || this._ignoreFilePath(absPath)) {
       return;
     }

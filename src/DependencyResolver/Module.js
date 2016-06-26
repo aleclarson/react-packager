@@ -107,20 +107,8 @@ class Module {
     return this._moduleCache.getPackageForModule(this);
   }
 
-  getDependencies() {
-    return this._cache.get(
-      this.path,
-      'dependencies',
-      () => this.read().then(data => data.dependencies)
-    );
-  }
-
-  getAsyncDependencies() {
-    return this._cache.get(
-      this.path,
-      'asyncDependencies',
-      () => this.read().then(data => data.asyncDependencies)
-    );
+  getDependencies(transformOptions) {
+    return this.read(transformOptions).then(data => data.dependencies);
   }
 
   getDependency(name) {
@@ -134,42 +122,36 @@ class Module {
     this._dependencies[hash] = mod;
   }
 
-  read() {
-    if (this._reading) {
-      return this._reading;
-    }
+  read(transformOptions) {
+    return this._cache.get(
+      this.path,
+      cacheKey('moduleData', transformOptions),
+      () => {
+        const fileContentPromise = this._fastfs.readFile(this.path);
+        return Promise.all([
+          fileContentPromise,
+          this._readDocBlock(fileContentPromise)
+        ]).then(([code, {id, moduleDocBlock}]) => {
+          // Ignore requires in JSON files or generated code. An example of this
+          // is prebuilt files like the SourceMap library.
+          if (this.isJSON() || 'extern' in moduleDocBlock) {
+            return {id, code, dependencies: []};
+          } else {
+            const transformCode = this._transformCode;
+            const codePromise = transformCode
+                ? transformCode(this, code, transformOptions)
+                : Promise({code});
 
-    this._reading = this._fastfs.readFile(this.path).then(content => {
-      const [id, moduleDocBlock] = this._parseDocBlock(content);
-
-      // Ignore requires in JSON files or generated code. An example of this
-      // is prebuilt files like the SourceMap library.
-      if (this.isJSON() || 'extern' in moduleDocBlock) {
-        return {
-          id,
-          dependencies: [],
-          asyncDependencies: [],
-          code: content,
-        };
-      } else {
-        const transformCode = this._transformCode;
-        const codePromise = transformCode
-            ? transformCode(this, content)
-            : Promise({code: content});
-
-        return codePromise.then(({code, dependencies, asyncDependencies}) => {
-          const {deps} = this._extractor(code);
-          return {
-            id,
-            code,
-            dependencies: dependencies || deps.sync,
-            asyncDependencies: asyncDependencies || deps.async,
-          };
-        });
+            return codePromise.then(({code, dependencies, map}) => {
+              if (!dependencies) {
+                dependencies = this._extractor(code).deps.sync;
+              }
+              return {id, code, dependencies, map};
+            });
+          }
+        })
       }
-    });
-
-    return this._reading;
+    );
   }
 
   hash() {
@@ -207,6 +189,33 @@ class Module {
     };
   }
 
+  _parseDocBlock(docBlock) {
+    // Extract an id for the module if it's using @providesModule syntax
+    // and if it's NOT in node_modules (and not a whitelisted node_module).
+    // This handles the case where a project may have a dep that has @providesModule
+    // docblock comments, but doesn't want it to conflict with whitelisted @providesModule
+    // modules, such as react-haste, fbjs-haste, or react-native or with non-dependency,
+    // project-specific code that is using @providesModule.
+    const moduleDocBlock = docblock.parseAsObject(docBlock);
+    const provides = moduleDocBlock.providesModule || moduleDocBlock.provides;
+
+    const id = provides && !this._depGraphHelpers.isNodeModulesDir(this.path)
+        ? /^\S+/.exec(provides)[0]
+        : undefined;
+    return {id, moduleDocBlock};
+  }
+
+  _readDocBlock(contentPromise) {
+    if (!this._docBlock) {
+      if (!contentPromise) {
+        contentPromise = this._fastfs.readWhile(this.path, whileInDocBlock);
+      }
+      this._docBlock = contentPromise
+        .then(docBlock => this._parseDocBlock(docBlock));
+    }
+    return this._docBlock;
+  }
+
   // We don't want 'node_modules' to be haste paths
   // unless the package is a watcher root.
   _isHasteCompatible() {
@@ -218,35 +227,6 @@ class Module {
       return true;
     }
     return inArray(this._fastfs._roots, pkg.root);
-  }
-
-  _parseDocBlock(docBlock) {
-    // Extract an id for the module if it's using @providesModule syntax
-    // and if it's NOT in node_modules (and not a whitelisted node_module).
-    // This handles the case where a project may have a dep that has @providesModule
-    // docblock comments, but doesn't want it to conflict with whitelisted @providesModule
-    // modules, such as react-haste, fbjs-haste, or react-native or with non-dependency,
-    // project-specific code that is using @providesModule.
-    const moduleDocBlock = docblock.parseAsObject(docBlock);
-    const provides = moduleDocBlock.providesModule || moduleDocBlock.provides;
-
-    const id = provides && !/node_modules/.test(this.path)
-        ? /^\S+/.exec(provides)[0]
-        : undefined;
-    return [id, moduleDocBlock];
-  }
-
-  _readDocBlock() {
-    const reading = this._reading || this._docBlock;
-    if (reading) {
-      return reading;
-    }
-    this._docBlock = this._fastfs.readWhile(this.path, whileInDocBlock)
-      .then(docBlock => {
-        const [id] = this._parseDocBlock(docBlock);
-        return {id};
-      });
-    return this._docBlock;
   }
 
   _processFileChange(type) {
@@ -300,6 +280,40 @@ function whileInDocBlock(chunk, i, result) {
 
   // check for end of doc block
   return !/\*\//.test(result);
+}
+
+// use weak map to speed up hash creation of known objects
+const knownHashes = new WeakMap();
+function stableObjectHash(object) {
+  let digest = knownHashes.get(object);
+
+  if (!digest) {
+    const hash = crypto.createHash('md5');
+    stableObjectHash.addTo(object, hash);
+    digest = hash.digest('base64');
+    knownHashes.set(object, digest);
+  }
+
+  return digest;
+}
+stableObjectHash.addTo = function addTo(value, hash) {
+  if (value === null || typeof value !== 'object') {
+    hash.update(JSON.stringify(value));
+  } else {
+    Object.keys(value).sort().forEach(key => {
+      const valueForKey = value[key];
+      if (valueForKey !== undefined) {
+        hash.update(key);
+        addTo(valueForKey, hash);
+      }
+    });
+  }
+};
+
+function cacheKey(field, transformOptions) {
+  return transformOptions !== undefined
+      ? stableObjectHash(transformOptions) + '\0' + field
+      : field;
 }
 
 module.exports = Module;

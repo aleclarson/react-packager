@@ -157,7 +157,6 @@ class Server {
 
     this._projectRoots = opts.projectRoots;
     this._bundles = Object.create(null);
-    this._lastBundle = null;
     this._changeWatchers = [];
     this._fileChangeListeners = [];
 
@@ -183,24 +182,9 @@ class Server {
     this._fileWatcher.on('all', this._onFileChange.bind(this));
 
     this._debouncedFileChangeHandler = _.debounce(filePath => {
-      const onFileChange = () => {
-        // this._rebuildBundles(filePath);
-        this._bundles = Object.create(null);
-        this._informChangeWatchers();
-      };
-
-      // if Hot Loading is enabled avoid rebuilding bundles and sending live
-      // updates. Instead, send the HMR updates right away and once that
-      // finishes, invoke any other file change listener.
-      if (this._hmrFileChangeListener) {
-        this._hmrFileChangeListener(
-          filePath,
-          this._bundler.stat(filePath),
-        ).then(onFileChange);
-        return;
-      }
-
-      onFileChange();
+      this._rebuildBundles(filePath);
+      this._bundles = Object.create(null);
+      this._informChangeWatchers();
     }, 50);
   }
 
@@ -243,27 +227,14 @@ class Server {
     const hash = JSON.stringify(options);
 
     if (!this._bundles[hash]) {
-      this._lastBundle = hash;
       this._bundles[hash] = this.buildBundle(options);
     }
 
     return this._bundles[hash];
   }
 
-  buildBundleForHMR(modules) {
-    return this._bundler.bundleForHMR(modules);
-  }
-
-  getShallowDependencies(entryFile) {
-    return this._bundler.getShallowDependencies(entryFile);
-  }
-
-  getModuleForPath(entryFile) {
-    return this._bundler.getModuleForPath(entryFile);
-  }
-
-  buildBundleForHMR(modules) {
-    return this._bundler.bundleForHMR(modules);
+  buildBundleForHMR(modules, host, port) {
+    return this._bundler.hmrBundle(modules, host, port);
   }
 
   getShallowDependencies(entryFile) {
@@ -342,8 +313,6 @@ class Server {
         });
       };
 
-      this._lastBundle = hash;
-
       // Wait for a previous build (if exists) to finish.
       return bundles[hash] = (bundles[hash] || Promise())
         .then(buildBundle, buildBundle);
@@ -405,6 +374,10 @@ class Server {
         lineNumber: error.lineNumber,
       }];
       res.end(JSON.stringify(error));
+
+      if (error.type === 'NotFoundError') {
+        delete this._bundles[bundleID];
+      }
     } else {
       log.moat(1);
       log.white(error.stack);

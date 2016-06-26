@@ -12,7 +12,6 @@ const debug = require('debug')('ReactNativePackager:DependencyGraph');
 
 const NODE_PATHS = require('node-paths');
 const inArray = require ('in-array');
-const syncFs = require('io/sync');
 const path = require('path');
 const util = require('util');
 
@@ -46,10 +45,7 @@ class ResolutionRequest {
   }
 
   resolveDependency(fromModule, toModuleName) {
-    return Promise.try(() =>
-      this._resolveAssetDependency(toModuleName) ||
-        this._resolveJSDependency(fromModule, toModuleName))
-
+    return this._resolveJSDependency(fromModule, toModuleName)
     .then(resolvedModule => {
       if (!resolvedModule || this._ignoreFilePath(resolvedModule.path)) {
         return null;
@@ -57,7 +53,6 @@ class ResolutionRequest {
       fromModule.setDependency(toModuleName, resolvedModule);
       return resolvedModule;
     })
-
     .fail(error => {
       log.moat(1);
       log.red('Failed to resolve: ');
@@ -203,6 +198,7 @@ class ResolutionRequest {
                   return collect(modDep);
                 }
               }
+              return null;
             });
           });
 
@@ -214,22 +210,6 @@ class ResolutionRequest {
 
       .then(() => response.setMocks(mocks));
     });
-  }
-
-  getAsyncDependencies(response) {
-    return Promise.try(() => {
-      const mod = this._moduleCache.getModule(this._entryPath);
-      return mod.getAsyncDependencies().then(bundles =>
-        Promise.all(bundles.map(bundle =>
-          Promise.all(bundle.map(
-            dep => this.resolveDependency(mod, dep)
-          ))
-        ))
-        .then(bs => bs.map(bundle => bundle.map(dep => dep.path)))
-      );
-    }).then(asyncDependencies => asyncDependencies.forEach(
-      (dependency) => response.pushAsyncDependency(dependency)
-    ));
   }
 
   _resolveJSDependency(fromModule, toModuleName) {
@@ -262,13 +242,6 @@ class ResolutionRequest {
       log.gray.dim(error.stack);
       log.moat(1);
     })
-  }
-
-  _resolveAssetDependency(toModuleName) {
-    const assetPath = this._assetServer.resolve(toModuleName, this._fastfs);
-    if (assetPath) {
-      return this._moduleCache.getAssetModule(assetPath);
-    }
   }
 
   _resolveHasteDependency(fromModule, toModuleName) {
@@ -412,7 +385,7 @@ class ResolutionRequest {
       toModuleName = path.join(lotus.path, toModuleName);
     }
 
-    if (syncFs.isDir(toModuleName)) {
+    if (fs.sync.isDir(toModuleName)) {
       return this._resolvePackageMain(toModuleName)
         .then(mainPath => this._resolveFilePath(mainPath, resolve));
     }
@@ -559,7 +532,7 @@ class ResolutionRequest {
       return false;
     }
     if (root.isDetached) {
-      return syncFs.isFile(filePath);
+      return fs.sync.isFile(filePath);
     }
     return this._fastfs.fileExists(filePath);
   }
@@ -570,7 +543,7 @@ class ResolutionRequest {
       return false;
     }
     if (root.isDetached) {
-      return syncFs.isDir(filePath);
+      return fs.sync.isDir(filePath);
     }
     return this._fastfs.dirExists(filePath);
   }

@@ -30,5 +30,5 @@ global.__loadBundles = function(bundles) {
     bundlesToRequest.forEach(b => requestedBundles[b] = nativePromise);
   }
 
-  return Promise.all(bundles.map(bundle => requestedBundles[bundle]));
+  return Promise.map(bundles, (bundle) => requestedBundles[bundle]);
 };

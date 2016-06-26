@@ -12,7 +12,6 @@ const Activity = require('../Activity');
 
 const _ = require('underscore');
 const declareOpts = require('../utils/declareOpts');
-const fs = require('fs');
 const getCacheFilePath = require('../DependencyResolver/Cache/getCacheFilePath');
 const loadCacheSync = require('../DependencyResolver/Cache/loadCacheSync');
 const version = require('../../package.json').version;
@@ -179,33 +178,26 @@ class BundlesLayout {
   }
 
   _persistCache() {
-    return Promise();
+    if (this._persisting !== null) {
+      return this._persisting;
+    }
 
-    // if (this._persisting !== null) {
-    //   return this._persisting;
-    // }
+    this._persisting = Promise
+      .all(_.values(this._layouts))
+      .then(bundlesLayout => {
+        var json = Object.create(null);
+        Object.keys(this._layouts).forEach((p, i) =>
+          json[p] = bundlesLayout[i]
+        );
 
-    // log.moat(1);
-    // log.white('Persisting bundles layout: ');
-    // log.green(this._cacheFilePath);
-    // log.moat(1);
+        return fs.async.writeFile(
+          this._cacheFilepath,
+          JSON.stringify(json),
+        );
+      })
+      .then(() => this._persisting = null);
 
-    // this._persisting = Q
-    //   .all(_.values(this._layouts))
-    //   .then(bundlesLayout => {
-    //     var json = Object.create(null);
-    //     Object.keys(this._layouts).forEach((p, i) =>
-    //       json[p] = bundlesLayout[i]
-    //     );
-    //
-    //     return Promise.ify(fs.writeFile)(
-    //       this._cacheFilepath,
-    //       JSON.stringify(json),
-    //     );
-    //   })
-    //   .then(() => this._persisting = null);
-    //
-    // return this._persisting;
+    return this._persisting;
   }
 
   _getCacheFilePath(options) {

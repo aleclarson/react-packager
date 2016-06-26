@@ -8,15 +8,11 @@
  */
 'use strict';
 
-const fs = require('fs');
 const path = require('path');
-const tmpDir = require('os').tmpDir();
+const os = require('os');
 
 const getCacheFilePath = require('./getCacheFilePath');
 const loadCacheSync = require('./loadCacheSync');
-
-const statAsync = Promise.ify(fs.stat);
-const writeFileAsync = Promise.ify(fs.writeFile);
 
 function getObjectValues(object) {
   return Object.keys(object).map(key => object[key]);
@@ -34,7 +30,7 @@ class Cache {
   constructor({
     resetCache,
     cacheKey,
-    cacheDirectory = tmpDir,
+    cacheDirectory = os.tmpDir(),
   }) {
     this._cacheFilePath = getCacheFilePath(cacheDirectory, cacheKey);
     if (!resetCache) {
@@ -92,7 +88,7 @@ class Cache {
     record.data[field] = loaderPromise
       .then(data => Promise.all([
         data,
-        statAsync(filepath),
+        fs.async.stat(filepath),
       ]))
       .then(([data, stat]) => {
         this._persistEventually();
@@ -119,48 +115,44 @@ class Cache {
     const data = this._data;
     const cacheFilepath = this._cacheFilePath;
 
-    const allPromises = getObjectValues(data)
-      .map(record => {
-        const fieldNames = Object.keys(record.data);
-        const fieldValues = getObjectValues(record.data);
+    this._persisting = Promise.map(getObjectValues(data), (record) => {
+      const fieldNames = Object.keys(record.data);
+      const fieldValues = getObjectValues(record.data);
 
-        return Promise
-          .all(fieldValues)
-          .then(ref => {
-            const ret = Object.create(null);
-            ret.metadata = record.metadata;
-            ret.data = Object.create(null);
-            fieldNames.forEach((field, index) =>
-              ret.data[field] = ref[index]
-            );
+      return Promise
+      .all(fieldValues)
+      .then(ref => {
+        const ret = Object.create(null);
+        ret.metadata = record.metadata;
+        ret.data = Object.create(null);
+        fieldNames.forEach((field, index) =>
+          ret.data[field] = ref[index]
+        );
 
-            return ret;
-          });
-      }
-    );
-
-    this._persisting = Promise.all(allPromises)
-      .then(values => {
-        const json = Object.create(null);
-        Object.keys(data).forEach((key, i) => {
-          // make sure the key wasn't added nor removed after we started
-          // persisting the cache
-          const value = values[i];
-          if (!value) {
-            return;
-          }
-
-          json[key] = Object.create(null);
-          json[key].metadata = data[key].metadata;
-          json[key].data = value.data;
-        });
-        return writeFileAsync(cacheFilepath, JSON.stringify(json));
-      })
-      .fail(e => console.error('Error while persisting cache:', e.message))
-      .then(() => {
-        this._persisting = null;
-        return true;
+        return ret;
       });
+    })
+    .then(values => {
+      const json = Object.create(null);
+      Object.keys(data).forEach((key, i) => {
+        // make sure the key wasn't added nor removed after we started
+        // persisting the cache
+        const value = values[i];
+        if (!value) {
+          return;
+        }
+
+        json[key] = Object.create(null);
+        json[key].metadata = data[key].metadata;
+        json[key].data = value.data;
+      });
+      return fs.async.file(cacheFilepath, JSON.stringify(json));
+    })
+    .fail(e => console.error('Error while persisting cache:', e.message))
+    .then(() => {
+      this._persisting = null;
+      return true;
+    });
 
     return this._persisting;
   }
@@ -171,11 +163,11 @@ class Cache {
 
     // Filter outdated cache and convert to promises.
     Object.keys(cacheOnDisk).forEach(key => {
-      if (!fs.existsSync(key)) {
+      if (!fs.sync.isFile(key)) {
         return;
       }
       var record = cacheOnDisk[key];
-      var stat = fs.statSync(key);
+      var stat = fs.sync.stat(key);
       if (stat.mtime.getTime() === record.metadata.mtime) {
         ret[key] = Object.create(null);
         ret[key].metadata = Object.create(null);

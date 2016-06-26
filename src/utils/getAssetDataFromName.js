@@ -11,14 +11,9 @@
 const path = require('path');
 const getPlatformExtension = require('./getPlatformExtension');
 
-function getAssetDataFromName(assetPath) {
-
-  if (assetPath.indexOf('/') !== -1) {
-    assetPath = path.basename(assetPath);
-  }
-
-  const ext = path.extname(assetPath);
-  const platformExt = getPlatformExtension(assetPath);
+function getAssetDataFromName(filename) {
+  const ext = path.extname(filename);
+  const platformExt = getPlatformExtension(filename);
 
   let pattern = '@([\\d\\.]+)x';
   if (platformExt != null) {
@@ -27,7 +22,7 @@ function getAssetDataFromName(assetPath) {
   pattern += '\\' + ext + '$';
   const re = new RegExp(pattern);
 
-  const match = assetPath.match(re);
+  const match = filename.match(re);
   let resolution;
 
   if (!(match && match[1])) {
@@ -41,22 +36,20 @@ function getAssetDataFromName(assetPath) {
 
   let assetName;
   if (match) {
-    assetName = assetPath.replace(re, ext);
+    assetName = filename.replace(re, ext);
   } else if (platformExt != null) {
-    assetName = assetPath.replace(new RegExp(`\\.${platformExt}\\${ext}`), ext);
+    assetName = filename.replace(new RegExp(`\\.${platformExt}\\${ext}`), ext);
   } else {
-    assetName = assetPath;
+    assetName = filename;
   }
 
-  let asset = {
+  return {
     resolution: resolution,
     assetName: assetName,
     type: ext.slice(1),
     name: path.basename(assetName, ext),
     platform: platformExt,
   };
-
-  return asset;
 }
 
 module.exports = getAssetDataFromName;

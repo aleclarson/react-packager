@@ -60,9 +60,7 @@ class FileWatcher extends EventEmitter {
   }
 
   getWatcherForRoot(root) {
-    return this._loading.then(() => {
-      return this._watcherByRoot[root];
-    });
+    return this._loading.then(() => this._watcherByRoot[root]);
   }
 
   isWatchman() {

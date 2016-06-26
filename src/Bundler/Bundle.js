@@ -9,12 +9,13 @@
 'use strict';
 
 const _ = require('underscore');
+const crypto = require('crypto');
+const UglifyJS = require('uglify-js');
+
+const Activity = require('../Activity');
 const base64VLQ = require('./base64-vlq');
 const BundleBase = require('./BundleBase');
-const UglifyJS = require('uglify-js');
 const ModuleTransport = require('../utils/ModuleTransport');
-const Activity = require('../Activity');
-const crypto = require('crypto');
 
 const SOURCEMAPPING_URL = '\n\/\/# sourceMappingURL=';
 

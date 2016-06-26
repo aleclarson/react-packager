@@ -1,9 +1,12 @@
 {
   "name": "react-packager",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "main": "index.js",
   "engines": {
     "node": ">=4"
+  },
+  "peerDependencies": {
+    "react-native": ">=0.22"
   },
   "lotus": {
     "dest": "dist",

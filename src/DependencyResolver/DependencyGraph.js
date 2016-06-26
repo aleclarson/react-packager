@@ -9,7 +9,6 @@
 'use strict';
 
 const emptyFunction = require('emptyFunction');
-const syncFs = require('io/sync');
 const sync = require('sync');
 const path = require('path');
 const util = require('util');
@@ -142,7 +141,7 @@ class DependencyGraph {
           }
         });
 
-        syncFs.write(
+        fs.sync.write(
           lotus.path + '/.ReactNativeHasteMap.json',
           JSON.stringify(json, null, 2)
         );
@@ -210,33 +209,12 @@ class DependencyGraph {
 
       const response = new ResolutionResponse();
 
-      return Promise.all([
-        req.getOrderedDependencies(
-          response,
-          this._opts.mocksPattern,
-          recursive,
-        ),
-        req.getAsyncDependencies(response),
-      ])
-
-      .then(() => response);
+      return req.getOrderedDependencies(
+        response,
+        this._opts.mocksPattern,
+        recursive,
+      ).then(() => response);
     });
-  }
-
-  getDebugInfo() {
-    var string = '';
-    sync.each(this._moduleCache._moduleCache, (mod, absPath) => {
-      string += '<h3>' + mod.path + '</h3><br/><br/>&nbsp;&nbsp;<h4>Dependencies:</h4><br/>';
-      sync.each(mod._dependencies, (mod) => {
-        string += '&nbsp;&nbsp;&nbsp;&nbsp;' + mod.path + '<br/>';
-      });
-      string += '<br/><br/>&nbsp;&nbsp;<h4>Dependers:</h4><br/>';
-      sync.each(mod._dependers, (mod) => {
-        string += '&nbsp;&nbsp;&nbsp;&nbsp;' + mod.path + '<br/>';
-      });
-      string += '<br/><br/>';
-    });
-    return string;
   }
 
   matchFilesByPattern(pattern) {

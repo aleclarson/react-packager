@@ -9,7 +9,6 @@
 'use strict';
 
 const path = require('path');
-const syncFs = require('io/sync');
 
 const makeBlacklist = require('./blacklist');
 const makeWhitelist = require('./whitelist');
@@ -20,7 +19,7 @@ function Config(filePath) {
     return Config._cache[filePath];
   }
 
-  if (!syncFs.isFile(filePath)) {
+  if (!fs.sync.isFile(filePath)) {
     const error = Error('"' + filePath + '" is not a file that exists.');
     error.code = 404;
     throw error;
@@ -40,8 +39,8 @@ Config.prototype = {
 
   reload() {
     let json;
-    if (syncFs.exists(this.path)) {
-      json = JSON.parse(syncFs.read(this.path));
+    if (fs.sync.exists(this.path)) {
+      json = JSON.parse(fs.sync.read(this.path));
     } else {
       json = {};
     }

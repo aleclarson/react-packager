@@ -1,9 +1,7 @@
 
 const _ = require('underscore');
-const fs = require('fs');
+const _fs = require('fs');
 const path = require('path');
-const syncFs = require('io/sync');
-const asyncFs = require('io/async');
 
 class File {
   constructor(filePath, { isDir, isDetached }) {
@@ -22,7 +20,7 @@ class File {
 
   read() {
     if (!this._read) {
-      this._read = asyncFs.read(this.path);
+      this._read = fs.async.read(this.path);
     }
 
     return this._read;
@@ -39,7 +37,7 @@ class File {
 
   stat() {
     if (!this._stat) {
-      this._stat = asyncFs.stats(this.path);
+      this._stat = fs.async.stats(this.path);
     }
 
     return this._stat;
@@ -80,16 +78,6 @@ class File {
       }
     });
     return files;
-  }
-
-  getFiles() {
-    return _.flatten(_.values(this.children).map(file => {
-      if (file.isDir) {
-        return file.getFiles();
-      } else {
-        return file;
-      }
-    }));
   }
 
   ext() {
@@ -135,7 +123,7 @@ class File {
       var newFile = this._getFileFromPath(newPath);
       if (newFile == null) {
         let isDir = i < parts.length - 1;
-        let isValid = isDir ? syncFs.isDir : syncFs.isFile;
+        let isValid = isDir ? fs.sync.isDir : fs.sync.isFile;
         if (!isValid(newPath)) {
           let fileType = isDir ? 'directory' : 'file';
           let error = Error('"' + newPath + '" is not a ' + fileType + ' that exists.');
@@ -147,7 +135,7 @@ class File {
 
         if (isDir) {
           let pkgJsonPath = newPath + '/package.json';
-          if (syncFs.isFile(pkgJsonPath)) {
+          if (fs.sync.isFile(pkgJsonPath)) {
             let pkgJson = new File(pkgJsonPath, { isDir: false });
             newFile.addChild(pkgJson);
           }
@@ -167,7 +155,7 @@ module.exports = File;
 
 function readWhile(filePath, predicate) {
   return Promise.resolve((resolve, reject) => {
-    fs.open(filePath, 'r', (openError, fd) => {
+    _fs.open(filePath, 'r', (openError, fd) => {
       if (openError) {
         reject(openError);
         return;
@@ -190,11 +178,11 @@ function readWhile(filePath, predicate) {
 }
 
 function read(fd, buffer, callback) {
-  fs.read(fd, buffer, 0, buffer.length, -1, callback);
+  _fs.read(fd, buffer, 0, buffer.length, -1, callback);
 }
 
 function close(fd, error, result, complete, callback) {
-  fs.close(fd, closeError => callback(error || closeError, result, complete));
+  _fs.close(fd, closeError => callback(error || closeError, result, complete));
 }
 
 function makeReadCallback(fd, predicate, callback) {
