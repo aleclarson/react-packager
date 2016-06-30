@@ -10,8 +10,10 @@
 
 const debug = require('debug')('ReactNativePackager:SocketServer');
 
+const Promise = require('Promise');
 const bser = require('bser');
 const net = require('net');
+const fs = require('io');
 
 const Server = require('../Server');
 
@@ -55,7 +57,7 @@ class SocketServer {
     this._server.on('connection', (sock) => this._handleConnection(sock));
 
     // Disable the file watcher.
-    options.nonPersistent = true;
+    options.nonPersistent = true; // TODO: 'options.nonPersistent' is deprecated.
     this._packagerServer = new Server(options);
     this._dieEventually(MAX_STARTUP_TIME);
   }

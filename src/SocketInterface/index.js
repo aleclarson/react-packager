@@ -8,16 +8,19 @@
  */
 'use strict';
 
-const SocketClient = require('./SocketClient');
-const SocketServer = require('./SocketServer');
+const debug = require('debug')('ReactNativePackager:SocketInterface');
+
 const _ = require('underscore');
 const crypto = require('crypto');
-const debug = require('debug')('ReactNativePackager:SocketInterface');
 const fs = require('fs');
 const net = require('net');
 const path = require('path');
 const tmpdir = require('os').tmpdir();
+const Promise = require('Promise');
 const {spawn} = require('child_process');
+
+const SocketClient = require('./SocketClient');
+const SocketServer = require('./SocketServer');
 
 const CREATE_SERVER_TIMEOUT = 5 * 60 * 1000;
 

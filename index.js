@@ -13,10 +13,11 @@ require('./env');
 var debug = require('debug');
 var omit = require('underscore').omit;
 var Activity = require('./dist/Activity');
-
-exports.config = process.config;
+var FileWatcher = require('node-haste').FileWatcher;
 
 exports.createServer = createServer;
+
+exports.createFileWatcher = createFileWatcher;
 
 exports.middleware = function(options) {
   var server = createServer(options);
@@ -102,7 +103,7 @@ function createNonPersistentServer(options) {
   Activity.disable();
   // Don't start the filewatcher or the cache.
   if (options.nonPersistent == null) {
-    options.nonPersistent = true;
+    options.nonPersistent = true; // TODO: 'options.nonPersistent' is deprecated!
   }
 
   return createServer(options);
@@ -122,4 +123,30 @@ function startSocketInterface() {
 
 if (require.main === module) { // used as entry point
   startSocketInterface();
+}
+
+// Options:
+//   - roots (required)
+//   - extensions (required)
+//   - nonPersistent (default: false)
+function createFileWatcher(options) {
+  if (options.nonPersistent) {
+    return FileWatcher.createDummyWatcher();
+  }
+
+  const globs = options.extensions.map(
+    ext => '**/*.' + ext
+  );
+
+  return new FileWatcher(
+    options.roots.map(dir => {
+      if (!path.isAbsolute(dir)) {
+        dir = path.join(lotus.path, dir);
+      }
+      if (!fs.sync.isDir(dir)) {
+        throw Error('Expected a directory: "' + dir + '"');
+      }
+      return { dir, globs };
+    })
+  );
 }

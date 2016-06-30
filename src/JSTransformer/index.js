@@ -10,6 +10,7 @@
 
 const debug = require('debug')('ReactNativePackager:JStransformer');
 
+const fs = require('io');
 const os = require('os');
 const temp = require('temp');
 const util = require('util');

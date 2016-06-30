@@ -8,8 +8,10 @@
  */
 'use strict';
 
+const fs = require('io');
 const path = require('path');
 const assert = require('assert');
+const Promise = require('Promise');
 const emptyFunction = require('emptyFunction');
 
 const Cache = require('node-haste').Cache;
@@ -27,10 +29,6 @@ const ModuleTransport = require('../utils/ModuleTransport');
 const imageSize = Promise.ify(require('image-size'));
 
 const validateOpts = declareOpts({
-  internalRoots: {
-    type: 'array',
-    required: true,
-  },
   projectRoots: {
     type: 'array',
     required: true,
@@ -66,10 +64,6 @@ const validateOpts = declareOpts({
   transformModulePath: {
     type:'string',
     required: false,
-  },
-  nonPersistent: {
-    type: 'boolean',
-    default: false,
   },
   fileWatcher: {
     type: 'object',
@@ -115,16 +109,20 @@ class Bundler {
       }
     }
 
+    if (opts.getTransformOptionsModulePath) {
+      this._transformOptionsModule = require(
+        opts.getTransformOptionsModulePath
+      );
+    }
+
     this._cache = new Cache({
       resetCache: opts.resetCache,
       cacheKey: cacheKeyParts.join('$'),
     });
 
     this._resolver = new Resolver({
-      internalRoots: opts.internalRoots,
       projectRoots: opts.projectRoots,
       projectExts: opts.projectExts,
-      assetServer: opts.assetServer,
       getBlacklist: opts.getBlacklist,
       polyfillModuleNames: opts.polyfillModuleNames,
       moduleFormat: opts.moduleFormat,
@@ -135,19 +133,10 @@ class Bundler {
     this._transformer = new Transformer({
       projectRoots: opts.projectRoots,
       cache: this._cache,
-      fastfs: this._resolver._depGraph._fastfs,
+      fastfs: this._resolver._depGraph._fastfs, // TODO: Make this less fragile.
       transformModulePath: opts.transformModulePath,
       disableInternalTransforms: opts.disableInternalTransforms,
     });
-
-    this._projectRoots = opts.projectRoots;
-    this._assetServer = opts.assetServer;
-
-    if (opts.getTransformOptionsModulePath) {
-      this._transformOptionsModule = require(
-        opts.getTransformOptionsModulePath
-      );
-    }
   }
 
   kill() {
@@ -186,7 +175,7 @@ class Bundler {
   }
 
   _hmrURL(prefix, platform, extensionOverride, path) {
-    const matchingRoot = this._projectRoots.find(root => path.startsWith(root));
+    const matchingRoot = this._opts.projectRoots.find(root => path.startsWith(root));
 
     if (!matchingRoot) {
       throw new Error('No matching project root for ', path);
@@ -396,11 +385,11 @@ class Bundler {
         dependencies.forEach(dep => {
           if (dep.isAsset()) {
             const relPath = getPathRelativeToRoot(
-              this._projectRoots,
+              this._opts.projectRoots,
               dep.path
             );
             promises.push(
-              this._assetServer.getAssetData(relPath, platform)
+              this._opts.assetServer.getAssetData(relPath, platform)
             );
             ret.push(placeHolder);
           } else {
@@ -459,7 +448,7 @@ class Bundler {
   }
 
   _generateAssetObjAndCode(module, platform = null) {
-    const relPath = getPathRelativeToRoot(this._projectRoots, module.path);
+    const relPath = getPathRelativeToRoot(this._opts.projectRoots, module.path);
     let assetUrlPath = path.join('/assets', path.dirname(relPath));
 
     // On Windows, change backslashes to slashes to get proper URL path from file path.
@@ -475,7 +464,7 @@ class Bundler {
 
     return Promise.all([
       isImage ? imageSize(module.path) : null,
-      this._assetServer.getAssetData(relPath, platform),
+      this._opts.assetServer.getAssetData(relPath, platform),
     ]).then(res => {
       const dimensions = res[0];
       const assetData = res[1];

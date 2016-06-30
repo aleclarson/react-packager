@@ -12,12 +12,13 @@ const _ = require('underscore');
 const mm = require('micromatch');
 const url = require('url');
 const path = require('path');
+const Promise = require('Promise');
 
 const Bundle = require('../Bundler/Bundle');
 const Bundler = require('../Bundler');
 const Activity = require('../Activity');
 const AssetServer = require('../AssetServer');
-const FileWatcher = require('../FileWatcher');
+const {FileWatcher} = require('node-haste');
 const declareOpts = require('../utils/declareOpts');
 const getPlatformExtension = require('../utils/getPlatformExtension');
 
@@ -33,10 +34,6 @@ const validateOpts = declareOpts({
     required: true,
   },
   assetExts: {
-    type: 'array',
-    default: [],
-  },
-  internalRoots: {
     type: 'array',
     default: [],
   },
@@ -63,10 +60,6 @@ const validateOpts = declareOpts({
   transformModulePath: {
     type:'string',
     required: false,
-  },
-  nonPersistent: {
-    type: 'boolean',
-    default: false,
   },
   transformTimeoutInterval: {
     type: 'number',
@@ -155,23 +148,16 @@ class Server {
   constructor(options) {
     const opts = validateOpts(options);
 
-    this._projectRoots = opts.projectRoots;
     this._bundles = Object.create(null);
     this._changeWatchers = [];
     this._fileChangeListeners = [];
 
-    const globs = opts.projectExts.map(ext => '**/*.' + ext);
-    const roots = opts.projectRoots
-      .concat(opts.internalRoots)
-      .map(dir => ({ dir, globs }));
-
-    this._fileWatcher = options.nonPersistent
-      ? FileWatcher.createDummyWatcher()
-      : new FileWatcher(roots);
+    this._fileWatcher = opts.fileWatcher;
+    this._fileWatcher.on('all', this._onFileChange.bind(this));
 
     this._assetServer = new AssetServer({
-      projectRoots: opts.projectRoots,
-      assetExts: opts.assetExts,
+      roots: opts.projectRoots,
+      extensions: opts.assetExts,
     });
 
     const bundlerOpts = Object.create(opts);
@@ -179,11 +165,8 @@ class Server {
     bundlerOpts.assetServer = this._assetServer;
     this._bundler = new Bundler(bundlerOpts);
 
-    this._fileWatcher.on('all', this._onFileChange.bind(this));
-
     this._debouncedFileChangeHandler = _.debounce(filePath => {
-      this._rebuildBundles(filePath);
-      this._bundles = Object.create(null);
+      this._rebuildBundles();
       this._informChangeWatchers();
     }, 50);
   }
@@ -296,7 +279,6 @@ class Server {
     const bundles = this._bundles;
 
     Object.keys(bundles).forEach(hash => {
-
       const options = JSON.parse(hash);
       const buildBundle = () => {
         log.moat(1);
@@ -312,10 +294,8 @@ class Server {
           return bundle;
         });
       };
-
-      // Wait for a previous build (if exists) to finish.
-      return bundles[hash] = (bundles[hash] || Promise())
-        .then(buildBundle, buildBundle);
+      const prevBuild = bundles[hash] || Promise();
+      return bundles[hash] = prevBuild.then(buildBundle, buildBundle);
     });
   }
 

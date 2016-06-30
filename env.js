@@ -9,25 +9,6 @@
 'use strict';
 
 global.lotus = require(process.env.LOTUS_PATH + '/lotus');
-
 global.log = require('log');
-
-global.Promise = require('Promise');
-
-global.fs = {
-  sync: require('io/sync'),
-  async: require('io/async'),
-};
-
-var path = require('path');
-process.config = require('./dist/utils/Config')(
-  path.resolve(lotus.path, 'react-packager.json')
-);
-
-var File = require('node-haste/lib/File');
-lotus.file = new File(lotus.path, {
-  isDir: true,
-  isDetached: true,
-});
 
 require('node-haste/lib/fastpath').replace();

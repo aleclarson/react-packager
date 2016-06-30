@@ -9,29 +9,22 @@
 'use strict';
 
 const path = require('path');
+const Promise = require('Promise');
 const emptyFunction = require('emptyFunction');
+const { DependencyGraph, Polyfill } = require('node-haste');
 
 const Activity = require('../Activity');
-const Polyfill = require('../DependencyResolver/Polyfill');
 const declareOpts = require('../utils/declareOpts');
 const replacePatterns = require('../utils/replacePatterns');
-const DependencyGraph = require('../DependencyResolver/DependencyGraph');
+const platformBlacklist = require('../utils/platformBlacklist');
 
 const validateOpts = declareOpts({
-  internalRoots: {
-    type: 'array',
-    required: false,
-  },
-  projectRoots: {
+  roots: {
     type: 'array',
     required: true,
   },
-  projectExts: {
+  extensions: {
     type: 'array',
-    required: true,
-  },
-  assetServer: {
-    type: 'object',
     required: true,
   },
   getBlacklist: {
@@ -81,27 +74,19 @@ class Resolver {
     const opts = validateOpts(options);
 
     this._depGraph = new DependencyGraph({
-      internalRoots: opts.internalRoots,
-      projectRoots: opts.projectRoots,
-      projectExts: opts.projectExts,
-      assetServer: opts.assetServer,
+      roots: opts.projectRoots,
+      lazyRoots: [lotus.path],
+      platforms: ['ios', 'android'],
+      extensions: opts.projectExts,
       fileWatcher: opts.fileWatcher,
       getBlacklist: opts.getBlacklist,
       cache: opts.cache,
       activity: Activity,
-      platforms: ['ios', 'android'],
       preferNativePlatform: true,
       shouldThrowOnUnresolvedErrors: (_, platform) => platform === 'ios',
     });
 
     this._polyfillModuleNames = opts.polyfillModuleNames || [];
-
-    this._depGraph.load().fail((err) => {
-      // This only happens at initialization. Live errors are easier to recover from.
-      console.log('Error building DependencyGraph:\n');
-      console.log(err.stack);
-      process.exit(1);
-    });
   }
 
   getShallowDependencies(entryFile) {
@@ -122,6 +107,7 @@ class Resolver {
       entryPath,
       platform,
       recursive,
+      ignoreFilePath: platformBlacklist(platform),
     }).then(resolutionResponse => {
       this._getPolyfillDependencies().reverse().forEach(
         polyfill => resolutionResponse.prependDependency(polyfill)

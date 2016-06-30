@@ -1,5 +1,7 @@
 /* eslint strict:0 */
 
+const Promise = require('Promise');
+
 let loadBundlesOnNative = (bundles) =>
   Promise.resolve(resolve =>
     require('NativeModules').RCTBundlesLoader.loadBundles(bundles, resolve));

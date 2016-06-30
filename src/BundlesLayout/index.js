@@ -11,6 +11,7 @@
 const Activity = require('../Activity');
 
 const _ = require('underscore');
+const Promise = require('Promise');
 const declareOpts = require('../utils/declareOpts');
 const getCacheFilePath = require('../DependencyResolver/Cache/getCacheFilePath');
 const loadCacheSync = require('../DependencyResolver/Cache/loadCacheSync');

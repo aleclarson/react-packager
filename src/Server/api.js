@@ -8,8 +8,10 @@
  */
 'use strict';
 
+const fs = require('io');
 const url = require('url');
 const path = require('path');
+const Promise = require('Promise');
 
 const Activity = require('../Activity');
 

@@ -10,10 +10,12 @@
 
 const debug = require('debug')('ReactNativePackager:SocketClient');
 
+const Promise = require('Promise');
 const bser = require('bser');
 const path = require('path');
 const net = require('net');
 const os = require('os');
+const fs = require('io');
 
 const Bundle = require('../Bundler/Bundle');
 const PrepackBundle = require('../Bundler/PrepackBundle');
