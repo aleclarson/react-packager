@@ -31,7 +31,7 @@ class SocketClient {
     debug('connecting to', sockPath);
 
     this._sock = net.connect(sockPath);
-    this._ready = Promise.resolve((resolve, reject) => {
+    this._ready = Promise.defer((resolve, reject) => {
       this._sock.on('connect', () => {
         this._sock.removeAllListeners('error');
         process.on('uncaughtException', (error) => {
@@ -113,7 +113,7 @@ class SocketClient {
   _send(message) {
     message.id = uid();
     this._sock.write(bser.dumpToBuffer(message));
-    return Promise.resolve((resolve, reject) => {
+    return Promise.defer((resolve, reject) => {
       this._resolvers[message.id] = {resolve, reject};
     });
   }

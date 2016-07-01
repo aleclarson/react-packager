@@ -15,6 +15,8 @@ var omit = require('underscore').omit;
 var Activity = require('./dist/Activity');
 var FileWatcher = require('node-haste').FileWatcher;
 
+exports.loadConfig = require('./dist/utils/loadConfig');
+
 exports.createServer = createServer;
 
 exports.createFileWatcher = createFileWatcher;

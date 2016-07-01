@@ -11,4 +11,11 @@
 global.lotus = require(process.env.LOTUS_PATH + '/lotus');
 global.log = require('log');
 
+// graceful-fs helps on getting an error when we run out of file
+// descriptors. When that happens it will enqueue the operation and retry it.
+require('graceful-fs').gracefulify(
+  require('fs')
+);
+
+// Replaces many helpers in the 'path' stdlib.
 require('node-haste/lib/fastpath').replace();

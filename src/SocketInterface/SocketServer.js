@@ -24,7 +24,7 @@ class SocketServer {
   constructor(sockPath, options) {
     this._server = net.createServer();
     this._server.listen(sockPath);
-    this._ready = Promise.resolve((resolve, reject) => {
+    this._ready = Promise.defer((resolve, reject) => {
       this._server.once('error', (e) => reject(e));
       this._server.once('listening', () => {
         // Remove error listener so we make sure errors propagate.
