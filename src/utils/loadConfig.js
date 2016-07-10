@@ -17,8 +17,8 @@ const cache = Object.create(null);
 
 module.exports = function loadConfig(filePath) {
 
-  if (Config._cache[filePath]) {
-    return Config._cache[filePath];
+  if (cache[filePath]) {
+    return cache[filePath];
   }
 
   const config = {
@@ -45,11 +45,8 @@ function reloadConfig() {
   this.redirect = json.redirect || Object.create(null);
 
   const whitelistRE = Whitelist(json.whitelist);
-  this.whitelist = (filePath) => whitelistRE.test(filePath);
-
   const blacklistRE = Blacklist(json.blacklist);
-  this.blacklist = (filePath) =>
-    !this.whitelist(filePath) && blacklistRE.test(filePath);
+  this.blacklist = (filePath) => !whitelistRE.test(filePath) && blacklistRE.test(filePath);
 
   return this;
 }

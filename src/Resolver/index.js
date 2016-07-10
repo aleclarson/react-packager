@@ -10,7 +10,6 @@
 
 const path = require('path');
 const Promise = require('Promise');
-const emptyFunction = require('emptyFunction');
 const { DependencyGraph, Polyfill } = require('node-haste');
 
 const Activity = require('../Activity');
@@ -19,17 +18,29 @@ const replacePatterns = require('../utils/replacePatterns');
 const platformBlacklist = require('../utils/platformBlacklist');
 
 const validateOpts = declareOpts({
-  roots: {
+  lazyRoots: {
+    type: 'array',
+    required: false,
+  },
+  projectRoots: {
     type: 'array',
     required: true,
   },
-  extensions: {
+  projectExts: {
     type: 'array',
     required: true,
   },
-  getBlacklist: {
+  assetExts: {
+    type: 'array',
+    required: true,
+  },
+  blacklist: {
     type: 'function',
-    default: emptyFunction,
+    required: false,
+  },
+  redirect: {
+    type: 'object',
+    required: false,
   },
   polyfillModuleNames: {
     type: 'array',
@@ -50,6 +61,10 @@ const validateOpts = declareOpts({
 });
 
 const getDependenciesValidateOpts = declareOpts({
+  entryFile: {
+    type: 'string',
+    required: true,
+  },
   dev: {
     type: 'boolean',
     default: true,
@@ -60,11 +75,15 @@ const getDependenciesValidateOpts = declareOpts({
   },
   unbundle: {
     type: 'boolean',
-    default: false
+    default: false,
   },
   recursive: {
     type: 'boolean',
     default: true,
+  },
+  verbose: {
+    type: 'boolean',
+    required: false,
   },
 });
 
@@ -74,19 +93,25 @@ class Resolver {
     const opts = validateOpts(options);
 
     this._depGraph = new DependencyGraph({
-      roots: opts.projectRoots,
       lazyRoots: [lotus.path],
-      platforms: ['ios', 'android'],
-      extensions: opts.projectExts,
+      projectRoots: opts.projectRoots,
+      projectExts: opts.projectExts,
+      assetExts: opts.assetExts,
       fileWatcher: opts.fileWatcher,
-      getBlacklist: opts.getBlacklist,
-      cache: opts.cache,
       activity: Activity,
+      platforms: ['ios', 'android'],
       preferNativePlatform: true,
+      cache: opts.cache,
       shouldThrowOnUnresolvedErrors: (_, platform) => platform === 'ios',
+      blacklist: opts.blacklist,
+      redirect: opts.redirect,
     });
 
     this._polyfillModuleNames = opts.polyfillModuleNames || [];
+  }
+
+  load() {
+    return this._depGraph.load();
   }
 
   getShallowDependencies(entryFile) {
@@ -101,30 +126,26 @@ class Resolver {
     return this._depGraph.getModuleForPath(entryFile);
   }
 
-  getDependencies(entryPath, options) {
-    const {platform, recursive} = getDependenciesValidateOpts(options);
-    return this._depGraph.getDependencies({
-      entryPath,
-      platform,
-      recursive,
-      ignoreFilePath: platformBlacklist(platform),
-    }).then(resolutionResponse => {
-      this._getPolyfillDependencies().reverse().forEach(
-        polyfill => resolutionResponse.prependDependency(polyfill)
-      );
+  getDependencies(options) {
+    const opts = getDependenciesValidateOpts(options);
+    opts.blacklist = platformBlacklist(opts.platform);
+    return this._depGraph.getDependencies(opts)
+      .then(resolutionResponse => {
+        this._getPolyfillDependencies().reverse().forEach(
+          polyfill => resolutionResponse.prependDependency(polyfill)
+        );
 
-      return resolutionResponse.finalize();
-    });
+        return resolutionResponse.finalize();
+      });
   }
 
   getModuleSystemDependencies(options) {
-    const opts = getDependenciesValidateOpts(options);
 
-    const prelude = opts.dev
+    const prelude = options.dev
         ? path.join(__dirname, 'polyfills/prelude_dev.js')
         : path.join(__dirname, 'polyfills/prelude.js');
 
-    const moduleSystem = opts.unbundle
+    const moduleSystem = options.unbundle
         ? path.join(__dirname, 'polyfills/require-unbundle.js')
         : path.join(__dirname, 'polyfills/require.js');
 
@@ -219,6 +240,10 @@ class Resolver {
 
   getDebugInfo() {
     return this._depGraph.getDebugInfo();
+  }
+
+  getFS() {
+    return this._depGraph.getFS();
   }
 }
 

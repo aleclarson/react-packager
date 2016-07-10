@@ -12,6 +12,7 @@ const debug = require('debug')('ReactNativePackager:JStransformer');
 
 const fs = require('io');
 const os = require('os');
+const Promise = require('Promise');
 const temp = require('temp');
 const util = require('util');
 const workerFarm = require('worker-farm');

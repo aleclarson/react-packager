@@ -8,13 +8,14 @@
  */
 'use strict';
 
+const {getAssetDataFromName, matchExtensions} = require('node-haste');
+
 const fs = require('io');
 const path = require('path');
 const crypto = require('crypto');
 const Promise = require('Promise');
 
 const declareOpts = require('../utils/declareOpts');
-const getAssetDataFromName = require('node-haste').getAssetDataFromName;
 
 const validateOpts = declareOpts({
   roots: {
@@ -30,8 +31,8 @@ const validateOpts = declareOpts({
 class AssetServer {
   constructor(options) {
     const opts = validateOpts(options);
-    this._roots = opts.roots;
-    this._extensions = opts.extensions; // TODO: Use this somewhere.
+    this.roots = opts.roots;
+    this.extensions = opts.extensions;
   }
 
   get(assetPath, platform = null) {
@@ -50,9 +51,7 @@ class AssetServer {
   getAssetData(assetPath, platform = null) {
     const {name, type} = getAssetDataFromName(assetPath);
     return this._getAssetRecord(assetPath, platform).then(({scales, files}) => {
-      const data = {name, type, scales, files};
-      return Promise.map(files, (file) => fs.async.stat(file))
-      .then(({stats, scales, files}) => {
+      return Promise.map(files, fs.async.stats).then(stats => {
         let hash = crypto.createHash('md5');
 
         stats.forEach(fstat =>
@@ -76,60 +75,64 @@ class AssetServer {
    * 5. Then pick the closest resolution (rounding up) to the requested one
    */
   _getAssetRecord(assetPath, platform = null) {
-    const filename = path.basename(assetPath);
-    return this._findRoot(this._roots, filename)
-      .then(dir => Promise.all([
-        dir,
-        fs.async.readDir(dir),
-      ]))
-      .then(res => {
-        log.format(res);
-        const dir = res[0];
-        const files = res[1];
-        const assetData = getAssetDataFromName(filename);
+    return this._findRoot(
+      this.roots,
+      path.dirname(assetPath),
+    )
+    .then(dir => Promise.all([
+      dir,
+      fs.async.readDir(dir),
+    ]))
+    .then(res => {
+      const dir = res[0];
+      const files = res[1];
+      const asset = getAssetDataFromName(assetPath);
+      const assetName = asset.name + '.' + asset.type;
 
-        const map = this._buildAssetMap(dir, files);
+      const map = this._buildAssetMap(dir, files);
 
-        let record;
-        if (platform != null){
-          record = map[getAssetKey(assetData.assetName, platform)] ||
-                   map[assetData.assetName];
-        } else {
-          record = map[assetData.assetName];
-        }
+      let record;
+      if (platform != null){
+        record = map[getAssetKey(assetName, platform)] ||
+                 map[assetName];
+      } else {
+        record = map[assetName];
+      }
 
-        if (!record) {
-          throw new Error(
-            `Asset not found: ${assetPath} for platform: ${platform}`
-          );
-        }
+      if (!record) {
+        throw new Error(
+          `Asset not found: ${assetPath} for platform: ${platform}`
+        );
+      }
 
-        return record;
-      });
+      return record;
+    });
   }
 
-  _findRoot(roots, dir) {
+  _findRoot(roots, filename) {
     return Promise.map(roots, (root) => {
-      const absPath = path.join(root, dir);
-      console.log('assetServer._findRoot: "' + absPath + '"');
-      return fs.async.isDir(absPath).then(isDirectory => {
-        return {path: absPath, isDirectory};
-      });
+      const filePath = path.join(root, filename);
+      return fs.async.exists(filePath)
+      .then(exists => ({filePath, exists}));
     }).then(stats => {
       for (let i = 0; i < stats.length; i++) {
-        if (stats[i].isDirectory) {
-          return stats[i].path;
+        if (stats[i].exists) {
+          return stats[i].filePath;
         }
       }
-      throw new Error('Could not find any directories');
+      throw new Error(`No valid root for file: '${filename}'`);
     });
   }
 
   _buildAssetMap(dir, files) {
     const map = Object.create(null);
-    files.forEach(function(file, i) {
-      const {assetName, platform, resolution} = getAssetDataFromName(file);
-      const assetKey = getAssetKey(assetName, platform);
+    files.forEach((assetPath, i) => {
+      if (!matchExtensions(this.extensions, assetPath)) {
+        return;
+      }
+
+      const asset = getAssetDataFromName(assetPath);
+      const assetKey = getAssetKey(asset.name + '.' + asset.type, asset.platform);
       let record = map[assetKey];
       if (!record) {
         record = map[assetKey] = {
@@ -140,14 +143,13 @@ class AssetServer {
 
       let insertIndex;
       const length = record.scales.length;
-
       for (insertIndex = 0; insertIndex < length; insertIndex++) {
-        if (resolution <  record.scales[insertIndex]) {
+        if (asset.resolution <  record.scales[insertIndex]) {
           break;
         }
       }
-      record.scales.splice(insertIndex, 0, resolution);
-      record.files.splice(insertIndex, 0, path.join(dir, file));
+      record.scales.splice(insertIndex, 0, asset.resolution);
+      record.files.splice(insertIndex, 0, path.join(dir, assetPath));
     });
 
     return map;

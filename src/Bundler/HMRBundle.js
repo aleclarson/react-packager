@@ -11,17 +11,24 @@
 const _ = require('underscore');
 const BundleBase = require('./BundleBase');
 const ModuleTransport = require('../utils/ModuleTransport');
+const emptyFunction = require('emptyFunction');
+const path = require('path');
 
 class HMRBundle extends BundleBase {
-  constructor({sourceURLFn, sourceMappingURLFn}) {
+  constructor({sourceURLFn, sourceMappingURLFn, findRoot}) {
     super();
     this._sourceURLFn = sourceURLFn
     this._sourceMappingURLFn = sourceMappingURLFn;
     this._sourceURLs = [];
     this._sourceMappingURLs = [];
+    this._findRoot = findRoot || emptyFunction;
   }
 
   addModule(resolver, response, module, transformed) {
+    const root = this._findRoot(transformed.sourcePath);
+    if (!root) {
+      return;
+    }
     return resolver.resolveRequires(response,
       module,
       transformed.code,
@@ -37,7 +44,13 @@ class HMRBundle extends BundleBase {
 
       super.addModule(moduleTransport);
       this._sourceMappingURLs.push(this._sourceMappingURLFn(moduleTransport.sourcePath));
-      this._sourceURLs.push(this._sourceURLFn(moduleTransport.sourcePath));
+
+      const sourcePath = path.relative(root, moduleTransport.sourcePath);
+      log.moat(1);
+      log.white('sourcePath = ');
+      log.yellow(moduleTransport.sourcePath);
+      log.moat(1);
+      this._sourceURLs.push(this._sourceURLFn(sourcePath));
     });
   }
 

@@ -10,20 +10,21 @@
 
 require('./env');
 
+var fs = require('io');
+var path = require('path');
 var debug = require('debug');
 var omit = require('underscore').omit;
-var Activity = require('./dist/Activity');
+var Activity = require('./js/Activity');
 var FileWatcher = require('node-haste').FileWatcher;
 
-exports.loadConfig = require('./dist/utils/loadConfig');
+exports.loadConfig = require('./js/utils/loadConfig');
 
 exports.createServer = createServer;
 
 exports.createFileWatcher = createFileWatcher;
 
 exports.middleware = function(options) {
-  var server = createServer(options);
-  return server.processRequest.bind(server);
+  return createServer(options).middleware();
 };
 
 exports.buildBundle = function(options, bundleOptions) {
@@ -68,7 +69,7 @@ exports.createClientFor = function(options) {
   }
   startSocketInterface();
   return (
-    require('./dist/SocketInterface')
+    require('./js/SocketInterface')
       .getOrCreateSocketFor(omit(options, ['verbose']))
   );
 };
@@ -97,7 +98,7 @@ function createServer(options) {
   }
 
   startSocketInterface();
-  var Server = require('./dist/Server');
+  var Server = require('./js/Server');
   return new Server(omit(options, ['verbose']));
 }
 
@@ -120,7 +121,7 @@ function startSocketInterface() {
     return;
   }
   didStartSocketInterface = true;
-  require('./dist/SocketInterface').listenOnServerMessages();
+  require('./js/SocketInterface').listenOnServerMessages();
 }
 
 if (require.main === module) { // used as entry point
@@ -128,9 +129,9 @@ if (require.main === module) { // used as entry point
 }
 
 // Options:
-//   - roots (required)
-//   - extensions (required)
-//   - nonPersistent (default: false)
+//   - roots: Array (required)
+//   - extensions: Array (required)
+//   - nonPersistent: Boolean (default=false)
 function createFileWatcher(options) {
   if (options.nonPersistent) {
     return FileWatcher.createDummyWatcher();
@@ -142,9 +143,6 @@ function createFileWatcher(options) {
 
   return new FileWatcher(
     options.roots.map(dir => {
-      if (!path.isAbsolute(dir)) {
-        dir = path.join(lotus.path, dir);
-      }
       if (!fs.sync.isDir(dir)) {
         throw Error('Expected a directory: "' + dir + '"');
       }

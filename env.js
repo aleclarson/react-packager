@@ -18,4 +18,4 @@ require('graceful-fs').gracefulify(
 );
 
 // Replaces many helpers in the 'path' stdlib.
-require('node-haste/lib/fastpath').replace();
+require('node-haste/fastpath').replace();

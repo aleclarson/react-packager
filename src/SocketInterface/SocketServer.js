@@ -110,7 +110,8 @@ class SocketServer {
         break;
 
       case 'buildBundle':
-        this._packagerServer.buildBundle(m.data).then(
+        const hash = JSON.stringify(m.data);
+        this._packagerServer.buildBundle(hash, m.data).then(
           (result) => this._reply(sock, m.id, 'result', result),
           handleError,
         );

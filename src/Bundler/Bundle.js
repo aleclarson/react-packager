@@ -9,6 +9,7 @@
 'use strict';
 
 const _ = require('underscore');
+const assertType = require('assertType');
 const crypto = require('crypto');
 const UglifyJS = require('uglify-js');
 
@@ -77,6 +78,7 @@ class Bundle extends BundleBase {
   }
 
   _addRequireCall(moduleId) {
+    assertType(moduleId, String);
     const code = ';require("' + moduleId + '");';
     const name = 'require-' + moduleId;
     super.addModule(new ModuleTransport({

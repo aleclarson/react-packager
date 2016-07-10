@@ -12,7 +12,6 @@
 // modulePathIgnorePatterns.
 const sharedBlacklist = [
   'react/src/test/**',
-  // 'react/src/renderers/dom/**',
   'react/src/React.js',
   'react/src/renderers/dom/ReactDOM.js',
 
