@@ -9,16 +9,16 @@
 'use strict';
 
 const path = require('path');
-const emptyFunction = require('emptyFunction');
+const Promise = require('Promise');
+const { DependencyGraph, Polyfill } = require('node-haste');
 
 const Activity = require('../Activity');
-const Polyfill = require('../DependencyResolver/Polyfill');
 const declareOpts = require('../utils/declareOpts');
 const replacePatterns = require('../utils/replacePatterns');
-const DependencyGraph = require('../DependencyResolver/DependencyGraph');
+const platformBlacklist = require('../utils/platformBlacklist');
 
 const validateOpts = declareOpts({
-  internalRoots: {
+  lazyRoots: {
     type: 'array',
     required: false,
   },
@@ -30,13 +30,21 @@ const validateOpts = declareOpts({
     type: 'array',
     required: true,
   },
-  assetServer: {
-    type: 'object',
-    required: true,
+  assetRoots: {
+    type: 'array',
+    required: false,
   },
-  getBlacklist: {
+  assetExts: {
+    type: 'array',
+    required: false,
+  },
+  blacklist: {
     type: 'function',
-    default: emptyFunction,
+    required: false,
+  },
+  redirect: {
+    type: 'object',
+    required: false,
   },
   polyfillModuleNames: {
     type: 'array',
@@ -57,6 +65,10 @@ const validateOpts = declareOpts({
 });
 
 const getDependenciesValidateOpts = declareOpts({
+  entryFile: {
+    type: 'string',
+    required: true,
+  },
   dev: {
     type: 'boolean',
     default: true,
@@ -67,11 +79,15 @@ const getDependenciesValidateOpts = declareOpts({
   },
   unbundle: {
     type: 'boolean',
-    default: false
+    default: false,
   },
   recursive: {
     type: 'boolean',
     default: true,
+  },
+  verbose: {
+    type: 'boolean',
+    required: false,
   },
 });
 
@@ -81,27 +97,26 @@ class Resolver {
     const opts = validateOpts(options);
 
     this._depGraph = new DependencyGraph({
-      internalRoots: opts.internalRoots,
+      lazyRoots: [lotus.path],
       projectRoots: opts.projectRoots,
       projectExts: opts.projectExts,
-      assetServer: opts.assetServer,
+      assetRoots: opts.assetRoots,
+      assetExts: opts.assetExts,
       fileWatcher: opts.fileWatcher,
-      getBlacklist: opts.getBlacklist,
-      cache: opts.cache,
       activity: Activity,
       platforms: ['ios', 'android'],
       preferNativePlatform: true,
+      cache: opts.cache,
       shouldThrowOnUnresolvedErrors: (_, platform) => platform === 'ios',
+      blacklist: opts.blacklist,
+      redirect: opts.redirect,
     });
 
     this._polyfillModuleNames = opts.polyfillModuleNames || [];
+  }
 
-    this._depGraph.load().fail((err) => {
-      // This only happens at initialization. Live errors are easier to recover from.
-      console.log('Error building DependencyGraph:\n');
-      console.log(err.stack);
-      process.exit(1);
-    });
+  load() {
+    return this._depGraph.load();
   }
 
   getShallowDependencies(entryFile) {
@@ -116,29 +131,26 @@ class Resolver {
     return this._depGraph.getModuleForPath(entryFile);
   }
 
-  getDependencies(entryPath, options) {
-    const {platform, recursive} = getDependenciesValidateOpts(options);
-    return this._depGraph.getDependencies({
-      entryPath,
-      platform,
-      recursive,
-    }).then(resolutionResponse => {
-      this._getPolyfillDependencies().reverse().forEach(
-        polyfill => resolutionResponse.prependDependency(polyfill)
-      );
+  getDependencies(options) {
+    const opts = getDependenciesValidateOpts(options);
+    opts.blacklist = platformBlacklist(opts.platform);
+    return this._depGraph.getDependencies(opts)
+      .then(resolutionResponse => {
+        this._getPolyfillDependencies().reverse().forEach(
+          polyfill => resolutionResponse.prependDependency(polyfill)
+        );
 
-      return resolutionResponse.finalize();
-    });
+        return resolutionResponse.finalize();
+      });
   }
 
   getModuleSystemDependencies(options) {
-    const opts = getDependenciesValidateOpts(options);
 
-    const prelude = opts.dev
+    const prelude = options.dev
         ? path.join(__dirname, 'polyfills/prelude_dev.js')
         : path.join(__dirname, 'polyfills/prelude.js');
 
-    const moduleSystem = opts.unbundle
+    const moduleSystem = options.unbundle
         ? path.join(__dirname, 'polyfills/require-unbundle.js')
         : path.join(__dirname, 'polyfills/require.js');
 
@@ -231,8 +243,8 @@ class Resolver {
       });
   }
 
-  getDebugInfo() {
-    return this._depGraph.getDebugInfo();
+  getFS() {
+    return this._depGraph.getFS();
   }
 }
 

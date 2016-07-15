@@ -10,17 +10,21 @@
 
 require('./env');
 
+var fs = require('io');
+var path = require('path');
 var debug = require('debug');
 var omit = require('underscore').omit;
-var Activity = require('./dist/Activity');
+var Activity = require('./js/Activity');
+var FileWatcher = require('node-haste').FileWatcher;
 
-exports.config = process.config;
+exports.loadConfig = require('./js/utils/loadConfig');
 
 exports.createServer = createServer;
 
+exports.createFileWatcher = createFileWatcher;
+
 exports.middleware = function(options) {
-  var server = createServer(options);
-  return server.processRequest.bind(server);
+  return createServer(options).middleware();
 };
 
 exports.buildBundle = function(options, bundleOptions) {
@@ -65,7 +69,7 @@ exports.createClientFor = function(options) {
   }
   startSocketInterface();
   return (
-    require('./dist/SocketInterface')
+    require('./js/SocketInterface')
       .getOrCreateSocketFor(omit(options, ['verbose']))
   );
 };
@@ -94,7 +98,7 @@ function createServer(options) {
   }
 
   startSocketInterface();
-  var Server = require('./dist/Server');
+  var Server = require('./js/Server');
   return new Server(omit(options, ['verbose']));
 }
 
@@ -102,7 +106,7 @@ function createNonPersistentServer(options) {
   Activity.disable();
   // Don't start the filewatcher or the cache.
   if (options.nonPersistent == null) {
-    options.nonPersistent = true;
+    options.nonPersistent = true; // TODO: 'options.nonPersistent' is deprecated!
   }
 
   return createServer(options);
@@ -117,9 +121,32 @@ function startSocketInterface() {
     return;
   }
   didStartSocketInterface = true;
-  require('./dist/SocketInterface').listenOnServerMessages();
+  require('./js/SocketInterface').listenOnServerMessages();
 }
 
 if (require.main === module) { // used as entry point
   startSocketInterface();
+}
+
+// Options:
+//   - roots: Array (required)
+//   - extensions: Array (required)
+//   - nonPersistent: Boolean (default=false)
+function createFileWatcher(options) {
+  if (options.nonPersistent) {
+    return FileWatcher.createDummyWatcher();
+  }
+
+  const globs = options.extensions.map(
+    ext => '**/*.' + ext
+  );
+
+  return new FileWatcher(
+    options.roots.map(dir => {
+      if (!fs.sync.isDir(dir)) {
+        throw Error('Expected a directory: "' + dir + '"');
+      }
+      return { dir, globs };
+    })
+  );
 }

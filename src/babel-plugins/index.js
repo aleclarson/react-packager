@@ -30,4 +30,3 @@ exports.getAll = function(options) {
 
   return plugins;
 };
-

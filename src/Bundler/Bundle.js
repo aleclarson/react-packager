@@ -9,6 +9,7 @@
 'use strict';
 
 const _ = require('underscore');
+const assertType = require('assertType');
 const crypto = require('crypto');
 const UglifyJS = require('uglify-js');
 
@@ -77,6 +78,7 @@ class Bundle extends BundleBase {
   }
 
   _addRequireCall(moduleId) {
+    assertType(moduleId, String);
     const code = ';require("' + moduleId + '");';
     const name = 'require-' + moduleId;
     super.addModule(new ModuleTransport({
@@ -323,28 +325,6 @@ class Bundle extends BundleBase {
     }).map(module => {
       return module.sourcePath;
     });
-  }
-
-  getDebugInfo() {
-    return [
-      '<div><h3>Main Module:</h3> ' + super.getMainModuleId() + '</div>',
-      '<style>',
-      'pre.collapsed {',
-      '  height: 10px;',
-      '  width: 100px;',
-      '  display: block;',
-      '  text-overflow: ellipsis;',
-      '  overflow: hidden;',
-      '  cursor: pointer;',
-      '}',
-      '</style>',
-      '<h3> Module paths and transformed code: </h3>',
-      super.getModules().map(module => {
-        return '<div> <h4> Path: </h4>' + module.sourcePath + '<br/> <h4> Source: </h4>' +
-               '<code><pre class="collapsed" onclick="this.classList.remove(\'collapsed\')">' +
-               _.escape(module.code) + '</pre></code></div>';
-      }).join('\n'),
-    ].join('\n');
   }
 
   toJSON() {

@@ -8,18 +8,21 @@
  */
 'use strict';
 
+const {getAssetDataFromName, matchExtensions} = require('node-haste');
+
+const fs = require('io');
 const path = require('path');
 const crypto = require('crypto');
+const Promise = require('Promise');
 
 const declareOpts = require('../utils/declareOpts');
-const getAssetDataFromName = require('node-haste').getAssetDataFromName;
 
 const validateOpts = declareOpts({
-  projectRoots: {
+  roots: {
     type: 'array',
     required: true,
   },
-  assetExts: {
+  extensions: {
     type: 'array',
     required: true,
   },
@@ -28,29 +31,34 @@ const validateOpts = declareOpts({
 class AssetServer {
   constructor(options) {
     const opts = validateOpts(options);
-    this._roots = opts.projectRoots;
-    this._assetExts = opts.assetExts;
+    this.roots = opts.roots;
+    this.extensions = opts.extensions;
   }
 
   get(assetPath, platform = null) {
-    const assetData = getAssetDataFromName(assetPath);
+    const {resolution} = getAssetDataFromName(assetPath);
     return this._getAssetRecord(assetPath, platform).then(record => {
-      for (let i = 0; i < record.scales.length; i++) {
-        if (record.scales[i] >= assetData.resolution) {
-          return fs.async.read(record.files[i]);
+      let filePath;
+      const fileCount = record.files.length;
+      for (let i = 0; i < fileCount; i++) {
+        if (record.scales[i] >= resolution) {
+          filePath = record.files[i];
+          break;
         }
       }
+      if (!filePath) {
+        // Load the largest possible scale.
+        filePath = record.files[fileCount - 1];
+      }
 
-      return fs.async.read(record.files[record.files.length - 1]);
+      return fs.async.read(filePath, {encoding: null});
     });
   }
 
   getAssetData(assetPath, platform = null) {
     const {name, type} = getAssetDataFromName(assetPath);
     return this._getAssetRecord(assetPath, platform).then(({scales, files}) => {
-      const data = {name, type, scales, files};
-      return Promise.map(files, (file) => fs.async.stat(file))
-      .then(({stats, scales, files}) => {
+      return Promise.map(files, fs.async.stats).then(stats => {
         let hash = crypto.createHash('md5');
 
         stats.forEach(fstat =>
@@ -74,66 +82,52 @@ class AssetServer {
    * 5. Then pick the closest resolution (rounding up) to the requested one
    */
   _getAssetRecord(assetPath, platform = null) {
-    const filename = path.basename(assetPath);
-    return (
-      this._findRoot(
-        this._roots,
-        filename,
-      )
-      .then(dir => Promise.all([
-        dir,
-        fs.async.readDir(dir),
-      ]))
-      .then(res => {
-        const dir = res[0];
-        const files = res[1];
-        const assetData = getAssetDataFromName(filename);
+    this._assertRoot(this.roots, assetPath);
+    const dir = path.dirname(assetPath);
+    const exts = this.extensions.length === 1 ? this.extensions[0] : '{' + this.extensions.join(',') + '}';
+    return fs.async.match(dir + '/*.' + exts)
+    .then(files => {
+      const asset = getAssetDataFromName(path.basename(assetPath));
+      const assetName = asset.name + '.' + asset.type;
 
-        const map = this._buildAssetMap(dir, files);
+      const map = this._buildAssetMap(dir, files);
 
-        let record;
-        if (platform != null){
-          record = map[getAssetKey(assetData.assetName, platform)] ||
-                   map[assetData.assetName];
-        } else {
-          record = map[assetData.assetName];
-        }
-
-        if (!record) {
-          throw new Error(
-            `Asset not found: ${assetPath} for platform: ${platform}`
-          );
-        }
-
-        return record;
-      })
-    );
-  }
-
-  _findRoot(roots, dir) {
-    return Promise.map(roots, (root) => {
-      const absPath = path.join(root, dir);
-      return fs.async.stat(absPath).then(fstat => {
-        return {path: absPath, isDirectory: fstat.isDirectory()};
-      }, err => {
-        return {path: absPath, isDirectory: false};
-      });
-    }).then(stats => {
-      for (let i = 0; i < stats.length; i++) {
-        if (stats[i].isDirectory) {
-          return stats[i].path;
-        }
+      let record;
+      if (platform != null){
+        record = map[getAssetKey(assetName, platform)] ||
+                 map[assetName];
+      } else {
+        record = map[assetName];
       }
-      throw new Error('Could not find any directories');
+
+      if (!record) {
+        throw new Error(
+          `Asset not found: ${assetPath} for platform: ${platform}`
+        );
+      }
+
+      return record;
     });
   }
 
+  _assertRoot(roots, filename) {
+    for (let i = 0; i < roots.length; i++) {
+      if (filename.startsWith(roots[i])) {
+        return;
+      }
+    }
+    throw new Error(`File has unknown root: '${filename}'`);
+  }
+
   _buildAssetMap(dir, files) {
-    const assets = files.map(getAssetDataFromName);
     const map = Object.create(null);
-    files.forEach(function(files, i) {
-      const {assetName, platform, resolution} = getAssetDataFromName(assets[i]);
-      const assetKey = getAssetKey(assetName, platform);
+    files.forEach((assetPath, i) => {
+      if (!matchExtensions(this.extensions, assetPath)) {
+        return;
+      }
+
+      const asset = getAssetDataFromName(path.basename(assetPath));
+      const assetKey = getAssetKey(asset.name + '.' + asset.type, asset.platform);
       let record = map[assetKey];
       if (!record) {
         record = map[assetKey] = {
@@ -144,14 +138,13 @@ class AssetServer {
 
       let insertIndex;
       const length = record.scales.length;
-
       for (insertIndex = 0; insertIndex < length; insertIndex++) {
         if (asset.resolution <  record.scales[insertIndex]) {
           break;
         }
       }
-      record.scales.splice(insertIndex, 0, resolution);
-      record.files.splice(insertIndex, 0, path.join(dir, file));
+      record.scales.splice(insertIndex, 0, asset.resolution);
+      record.files.splice(insertIndex, 0, assetPath);
     });
 
     return map;

@@ -9,25 +9,13 @@
 'use strict';
 
 global.lotus = require(process.env.LOTUS_PATH + '/lotus');
-
 global.log = require('log');
 
-global.Promise = require('Promise');
-
-global.fs = {
-  sync: require('io/sync'),
-  async: require('io/async'),
-};
-
-var path = require('path');
-process.config = require('./dist/utils/Config')(
-  path.resolve(lotus.path, 'react-packager.json')
+// graceful-fs helps on getting an error when we run out of file
+// descriptors. When that happens it will enqueue the operation and retry it.
+require('graceful-fs').gracefulify(
+  require('fs')
 );
 
-var File = require('node-haste/lib/File');
-lotus.file = new File(lotus.path, {
-  isDir: true,
-  isDetached: true,
-});
-
-require('node-haste/lib/fastpath').replace();
+// Replaces many helpers in the 'path' stdlib.
+require('node-haste/fastpath').replace();

@@ -9,9 +9,10 @@
 'use strict';
 
 const path = require('path');
+const fs = require('io');
 
-const makeBlacklist = require('./blacklist');
-const makeWhitelist = require('./whitelist');
+const Blacklist = require('./blacklist');
+const Whitelist = require('./whitelist');
 
 function Config(filePath) {
 
@@ -52,10 +53,10 @@ Config.prototype = {
     // Support global path redirection.
     this.redirect = json.redirect || Object.create(null);
 
-    const whitelistRE = makeWhitelist(json.whitelist);
+    const whitelistRE = Whitelist(json.whitelist);
     this.whitelist = (filePath) => whitelistRE.test(filePath);
 
-    const blacklistRE = makeBlacklist(json.blacklist);
+    const blacklistRE = Blacklist(json.blacklist);
     this.blacklist = (filePath) =>
       !this.whitelist(filePath) && blacklistRE.test(filePath);
   },

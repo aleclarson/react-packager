@@ -8,28 +8,35 @@
  */
 'use strict';
 
-const path = require('path');
+const { Cache } = require('node-haste');
+const { version } = require('../../package.json');
+
 const assert = require('assert');
 const emptyFunction = require('emptyFunction');
+const fs = require('io');
+const path = require('path');
+const Promise = require('Promise');
 
-const Cache = require('node-haste').Cache;
-const Bundle = require('./Bundle');
-const version = require('../../package.json').version;
 const Activity = require('../Activity');
-const Resolver = require('../Resolver');
-const HMRBundle = require('./HMRBundle');
-const Transformer = require('../JSTransformer');
-const declareOpts = require('../utils/declareOpts');
+const Bundle = require('./Bundle');
 const BundlesLayout = require('../BundlesLayout');
-const PrepackBundle = require('./PrepackBundle');
+const declareOpts = require('../utils/declareOpts');
+const HMRBundle = require('./HMRBundle');
 const ModuleTransport = require('../utils/ModuleTransport');
+const PrepackBundle = require('./PrepackBundle');
+const Resolver = require('../Resolver');
+const Transformer = require('../JSTransformer');
 
 const imageSize = Promise.ify(require('image-size'));
 
 const validateOpts = declareOpts({
-  internalRoots: {
-    type: 'array',
+  fileWatcher: {
+    type: 'object',
     required: true,
+  },
+  lazyRoots: {
+    type: 'array',
+    required: false,
   },
   projectRoots: {
     type: 'array',
@@ -39,13 +46,25 @@ const validateOpts = declareOpts({
     type: 'array',
     required: true,
   },
+  assetRoots: {
+    type: 'array',
+    required: false,
+  },
+  assetExts: {
+    type: 'array',
+    required: false,
+  },
   assetServer: {
     type: 'object',
     required: true,
   },
-  getBlacklist: {
+  blacklist: {
     type: 'function',
-    default: emptyFunction,
+    required: false,
+  },
+  redirect: {
+    type: 'object',
+    required: false,
   },
   moduleFormat: {
     type: 'string',
@@ -67,14 +86,6 @@ const validateOpts = declareOpts({
     type:'string',
     required: false,
   },
-  nonPersistent: {
-    type: 'boolean',
-    default: false,
-  },
-  fileWatcher: {
-    type: 'object',
-    required: true,
-  },
   transformTimeoutInterval: {
     type: 'number',
     required: false,
@@ -94,7 +105,7 @@ class Bundler {
 
     let mtime;
     try {
-      ({mtime} = fs.sync.stat(opts.transformModulePath));
+      ({mtime} = fs.sync.stats(opts.transformModulePath));
       mtime = String(mtime.getTime());
     } catch (error) {
       mtime = '';
@@ -115,17 +126,24 @@ class Bundler {
       }
     }
 
+    if (opts.getTransformOptionsModulePath) {
+      this._transformOptionsModule = require(
+        opts.getTransformOptionsModulePath
+      );
+    }
+
     this._cache = new Cache({
       resetCache: opts.resetCache,
       cacheKey: cacheKeyParts.join('$'),
     });
 
     this._resolver = new Resolver({
-      internalRoots: opts.internalRoots,
       projectRoots: opts.projectRoots,
       projectExts: opts.projectExts,
-      assetServer: opts.assetServer,
-      getBlacklist: opts.getBlacklist,
+      assetRoots: opts.assetRoots,
+      assetExts: opts.assetExts,
+      blacklist: opts.blacklist,
+      redirect: opts.redirect,
       polyfillModuleNames: opts.polyfillModuleNames,
       moduleFormat: opts.moduleFormat,
       fileWatcher: opts.fileWatcher,
@@ -135,19 +153,12 @@ class Bundler {
     this._transformer = new Transformer({
       projectRoots: opts.projectRoots,
       cache: this._cache,
-      fastfs: this._resolver._depGraph._fastfs,
+      fastfs: this._resolver._depGraph.getFS(),
       transformModulePath: opts.transformModulePath,
       disableInternalTransforms: opts.disableInternalTransforms,
     });
 
-    this._projectRoots = opts.projectRoots;
-    this._assetServer = opts.assetServer;
-
-    if (opts.getTransformOptionsModulePath) {
-      this._transformOptionsModule = require(
-        opts.getTransformOptionsModulePath
-      );
-    }
+    this._responseCache = Object.create(null);
   }
 
   kill() {
@@ -186,21 +197,13 @@ class Bundler {
   }
 
   _hmrURL(prefix, platform, extensionOverride, path) {
-    const matchingRoot = this._projectRoots.find(root => path.startsWith(root));
-
-    if (!matchingRoot) {
-      throw new Error('No matching project root for ', path);
-    }
-
     const extensionStart = path.lastIndexOf('.');
-    let resource = path.substring(
-      matchingRoot.length,
-      extensionStart !== -1 ? extensionStart : undefined,
-    );
 
-    const extension = extensionStart !== -1
-      ? path.substring(extensionStart + 1)
-      : null;
+    const resource = extensionStart < 0 ? path :
+      path.substring(0, extensionStart);
+
+    const extension = extensionStart < 0 ? null :
+      path.substring(extensionStart + 1);
 
     return (
       prefix + resource +
@@ -209,14 +212,26 @@ class Bundler {
     );
   }
 
+  _findRoot(filePath) {
+    const fastfs = this._resolver.getFS();
+    const isRoot = (root) => filePath.startsWith(root);
+    let root = this._opts.projectRoots.find(isRoot);
+    if (!root && fastfs._fastPaths[filePath]) {
+      root = this._opts.lazyRoots.find(isRoot);
+    }
+    if (!root) {
+      throw new Error(`'filePath' belongs to an unknown root: '${filePath}'`);
+    }
+    return root;
+  }
+
   hmrBundle(options, host, port) {
     return this._bundle({
+      verbose: true,
       bundle: new HMRBundle({
         sourceURLFn: this._sourceHMRURL.bind(this, options.platform, host, port),
-        sourceMappingURLFn: this._sourceMappingHMRURL.bind(
-          this,
-          options.platform,
-        ),
+        sourceMappingURLFn: this._sourceMappingHMRURL.bind(this, options.platform),
+        findRoot: this._findRoot.bind(this),
       }),
       hot: true,
       ...options,
@@ -228,28 +243,47 @@ class Bundler {
     entryFile,
     runModule: runMainModule,
     runBeforeMainModule,
-    dev: isDev,
+    dev,
+    verbose,
     platform,
     moduleSystemDeps = [],
     hot,
     entryModuleOnly,
     resolutionResponse
   }) {
-    const onResolutionResponse = response => {
+    const responseHash = JSON.stringify({ entryFile, platform, dev, hot });
+    if (!resolutionResponse && this._responseCache[responseHash]) {
+      resolutionResponse = this._responseCache[responseHash];
+    }
+
+    const onResolutionResponse = (response, wasFinalized) => {
+      if (!wasFinalized) {
+        this._responseCache[responseHash] = response;
+        log.moat(1);
+        log.white('Cached dependencies: ');
+        log.green(responseHash);
+        log.moat(1);
+      }
+
       bundle.setMainModuleId(response.mainModuleId);
       if (bundle.setNumPrependedModules) {
         bundle.setNumPrependedModules(
           response.numPrependedDependencies + moduleSystemDeps.length
         );
       }
+
+      let dependencies;
       if (entryModuleOnly) {
-        response.dependencies = response.dependencies.filter(module =>
-          module.path.endsWith(entryFile)
-        );
+        dependencies = response.dependencies
+          .filter(module => module.path.endsWith(entryFile));
       } else {
-        response.dependencies = moduleSystemDeps.concat(response.dependencies);
+        dependencies = moduleSystemDeps
+          .concat(response.dependencies);
       }
+
+      return response.copy({dependencies});
     };
+
     const finalizeBundle = ({bundle, transformedModules, response}) =>
       Promise.map(transformedModules, ({module, transformed}) =>
         bundle.addModule(this._resolver, response, module, transformed)
@@ -260,8 +294,9 @@ class Bundler {
 
     return this._buildBundle({
       entryFile,
-      isDev,
+      dev,
       platform,
+      verbose,
       bundle,
       hot,
       resolutionResponse,
@@ -275,7 +310,7 @@ class Bundler {
     runModule: runMainModule,
     runBeforeMainModule,
     sourceMapUrl,
-    dev: isDev,
+    dev,
     platform,
   }) {
     const onModuleTransformed = ({module, transformed, response, bundle}) => {
@@ -288,6 +323,7 @@ class Bundler {
       }
 
       return module.getName().then(name => {
+        console.log(name);
         bundle.addModule(name, transformed, deps, module.isPolyfill());
       });
     };
@@ -299,7 +335,7 @@ class Bundler {
 
     return this._buildBundle({
       entryFile,
-      isDev,
+      dev,
       platform,
       onModuleTransformed,
       finalizeBundle,
@@ -309,49 +345,73 @@ class Bundler {
 
   _buildBundle({
     entryFile,
-    isDev,
+    dev,
     platform,
+    verbose,
     bundle,
     hot,
     resolutionResponse,
-    onResolutionResponse = emptyFunction,
+    onResolutionResponse = emptyFunction.thatReturnsArgument,
     onModuleTransformed = emptyFunction,
     finalizeBundle = emptyFunction,
   }) {
-    const findEventId = Activity.startEvent('find dependencies');
-    if (!resolutionResponse) {
-      resolutionResponse = this.getDependencies(entryFile, isDev, platform);
-    }
+    const wasFinalized = resolutionResponse && resolutionResponse._finalized;
+    return Promise.try(() => {
+      if (wasFinalized) {
+        return Promise(resolutionResponse, true);
+      }
 
-    return resolutionResponse.then(response => {
-      Activity.endEvent(findEventId);
-      onResolutionResponse(response);
+      let findEventId;
+      return this._resolver.load().then(() => {
+        findEventId = verbose && Activity.startEvent('find dependencies');
 
-      const transformEventId = Activity.startEvent('transform');
-      return Promise.map(response.dependencies, (module) =>
-        this._transformModule({
+        if (resolutionResponse) {
+          return resolutionResponse.onFinalize();
+        }
+        return this.getDependencies({
+          entryFile,
+          dev,
+          platform,
+          verbose,
+        });
+      })
+      .then(response => {
+        verbose && Activity.endEvent(findEventId);
+        return Promise(response, false);
+      })
+    })
+    .then(onResolutionResponse)
+    .then(response => {
+      const transformEventId = verbose && Activity.startEvent('transform');
+
+      return Promise.map(response.dependencies, (module) => {
+        return this._transformModule({
           mainModuleName: response.mainModuleId,
           bundle,
           module,
           platform,
-          dev: isDev,
+          dev,
           hot,
         }).then(transformed => {
-          log.cyan.dim('•');
-          if (log.line.length >= 50) {
-            log.moat(0);
+          if (verbose) {
+            log('•');
+            if (log.line.length >= 50) {
+              log.moat(0);
+            }
           }
           onModuleTransformed({module, transformed, response, bundle});
           return {module, transformed};
         })
-      ).then(transformedModules => {
-        Activity.endEvent(transformEventId);
+      })
+      .then(transformedModules => {
+        verbose && Activity.endEvent(transformEventId);
         return finalizeBundle({
           bundle,
           transformedModules,
           response,
         });
-      }).then(() => bundle);
+      })
+      .then(() => bundle);
     });
   }
 
@@ -362,6 +422,19 @@ class Bundler {
     }
 
     this._transformer.invalidateFile(filePath);
+
+    const mod = this._resolver.getModuleForPath(filePath);
+    if (mod) {
+      Object.keys(this._responseCache).forEach(hash => {
+        if (this._responseCache[hash]._mappings[mod.hash()]) {
+          delete this._responseCache[hash];
+          log.moat(1);
+          log.white('Invalidated dependencies: ');
+          log.red(hash);
+          log.moat(1);
+        }
+      });
+    }
   }
 
   getShallowDependencies(entryFile) {
@@ -376,31 +449,20 @@ class Bundler {
     return this._resolver.getModuleForPath(entryFile);
   }
 
-  getDependencies(main, isDev, platform, recursive = true) {
-    return this._resolver.getDependencies(
-      main,
-      {
-        dev: isDev,
-        platform,
-        recursive,
-      },
-    );
+  getDependencies(options) {
+    return this._resolver.getDependencies(options);
   }
 
-  getOrderedDependencyPaths({ entryFile, dev, platform }) {
-    return this.getDependencies(entryFile, dev, platform).then(
+  getOrderedDependencyPaths(options) {
+    return this.getDependencies(options).then(
       ({ dependencies }) => {
         const ret = [];
         const promises = [];
         const placeHolder = {};
         dependencies.forEach(dep => {
           if (dep.isAsset()) {
-            const relPath = getPathRelativeToRoot(
-              this._projectRoots,
-              dep.path
-            );
             promises.push(
-              this._assetServer.getAssetData(relPath, platform)
+              this._opts.assetServer.getAssetData(dep.path, options.platform)
             );
             ret.push(placeHolder);
           } else {
@@ -439,10 +501,10 @@ class Bundler {
     } else {
       return this._getTransformOptions(
         {
-          bundleEntry: mainModuleName,
-          platform: platform,
-          dev: dev,
           modulePath: module.path,
+          bundleEntry: mainModuleName,
+          platform,
+          dev,
         },
         {hot},
       ).then(options => {
@@ -454,19 +516,7 @@ class Bundler {
     }
   }
 
-  getGraphDebugInfo() {
-    return this._resolver.getDebugInfo();
-  }
-
   _generateAssetObjAndCode(module, platform = null) {
-    const relPath = getPathRelativeToRoot(this._projectRoots, module.path);
-    let assetUrlPath = path.join('/assets', path.dirname(relPath));
-
-    // On Windows, change backslashes to slashes to get proper URL path from file path.
-    if (path.sep === '\\') {
-      assetUrlPath = assetUrlPath.replace(/\\/g, '/');
-    }
-
     // Test extension against all types supported by image-size module.
     // If it's not one of these, we won't treat it as an image.
     let isImage = [
@@ -475,14 +525,13 @@ class Bundler {
 
     return Promise.all([
       isImage ? imageSize(module.path) : null,
-      this._assetServer.getAssetData(relPath, platform),
+      this._opts.assetServer.getAssetData(module.path, platform),
     ]).then(res => {
       const dimensions = res[0];
       const assetData = res[1];
       const asset = {
         __packager_asset: true,
         fileSystemLocation: path.dirname(module.path),
-        httpServerLocation: assetUrlPath,
         width: dimensions ? dimensions.width / module.resolution : undefined,
         height: dimensions ? dimensions.height / module.resolution : undefined,
         scales: assetData.scales,
@@ -527,6 +576,19 @@ class Bundler {
       return {...options, ...overrides};
     });
   }
+
+  _getPathRelativeToRoot(roots, absPath) {
+    for (let i = 0; i < roots.length; i++) {
+      const relPath = path.relative(roots[i], absPath);
+      if (relPath[0] !== '.') {
+        return relPath;
+      }
+    }
+
+    throw new Error(
+      'Expected root module to be relative to one of the project roots'
+    );
+  }
 }
 
 function generateJSONModule(module) {
@@ -542,22 +604,9 @@ function generateJSONModule(module) {
   });
 }
 
-function getPathRelativeToRoot(roots, absPath) {
-  for (let i = 0; i < roots.length; i++) {
-    const relPath = path.relative(roots[i], absPath);
-    if (relPath[0] !== '.') {
-      return relPath;
-    }
-  }
-
-  throw new Error(
-    'Expected root module to be relative to one of the project roots'
-  );
-}
-
 function verifyRootExists(root) {
   // Verify that the root exists.
-  assert(fs.sync.stat(root).isDirectory(), 'Root has to be a valid directory');
+  assert(fs.sync.isDir(root), 'Root has to be a valid directory');
 }
 
 class DummyCache {

@@ -10,8 +10,10 @@
 
 const debug = require('debug')('ReactNativePackager:SocketServer');
 
+const Promise = require('Promise');
 const bser = require('bser');
 const net = require('net');
+const fs = require('io');
 
 const Server = require('../Server');
 
@@ -22,7 +24,7 @@ class SocketServer {
   constructor(sockPath, options) {
     this._server = net.createServer();
     this._server.listen(sockPath);
-    this._ready = Promise.resolve((resolve, reject) => {
+    this._ready = Promise.defer((resolve, reject) => {
       this._server.once('error', (e) => reject(e));
       this._server.once('listening', () => {
         // Remove error listener so we make sure errors propagate.
@@ -55,7 +57,7 @@ class SocketServer {
     this._server.on('connection', (sock) => this._handleConnection(sock));
 
     // Disable the file watcher.
-    options.nonPersistent = true;
+    options.nonPersistent = true; // TODO: 'options.nonPersistent' is deprecated.
     this._packagerServer = new Server(options);
     this._dieEventually(MAX_STARTUP_TIME);
   }
@@ -108,7 +110,8 @@ class SocketServer {
         break;
 
       case 'buildBundle':
-        this._packagerServer.buildBundle(m.data).then(
+        const hash = JSON.stringify(m.data);
+        this._packagerServer.buildBundle(hash, m.data).then(
           (result) => this._reply(sock, m.id, 'result', result),
           handleError,
         );

@@ -8,15 +8,15 @@
  */
 'use strict';
 
-const Activity = require('../Activity');
+const { Cache } = require('node-haste');
 
 const _ = require('underscore');
+const Activity = require('../Activity');
 const declareOpts = require('../utils/declareOpts');
-const getCacheFilePath = require('../DependencyResolver/Cache/getCacheFilePath');
-const loadCacheSync = require('../DependencyResolver/Cache/loadCacheSync');
-const version = require('../../package.json').version;
 const path = require('path');
+const Promise = require('Promise');
 const tmpdir = require('os').tmpDir();
+const version = require('../../package.json').version;
 
 const validateOpts = declareOpts({
   dependencyResolver: {
@@ -140,29 +140,14 @@ class BundlesLayout {
 
   _loadCacheSync(cachePath) {
 
-    // log.moat(1);
-    // log.white('Loading bundles layout: ');
-    // log.green(cachePath);
-    // log.moat(1);
-
-    // const loadCacheId = Activity.startEvent('Loading Bundles Layout');
     const cacheOnDisk = loadCacheSync(cachePath);
-
-    const cacheKeys = Object.keys(cacheOnDisk);
-    // log.moat(1);
-    // log.white('Bundles layout has ');
-    // log.pink(cacheKeys.length);
-    // log.white(' bundles!');
-    // log.moat(1);
 
     // TODO: create single-module bundles for unexistent modules
     // TODO: remove modules that no longer exist
-    cacheKeys.forEach(entryPath => {
+    Object.keys(cacheOnDisk).forEach(entryPath => {
       this._layouts[entryPath] = Promise(cacheOnDisk[entryPath]);
       this._fillModuleToBundleMap(cacheOnDisk[entryPath]);
     });
-
-    // Activity.endEvent(loadCacheId);
   }
 
   _fillModuleToBundleMap(bundle) {
@@ -201,7 +186,7 @@ class BundlesLayout {
   }
 
   _getCacheFilePath(options) {
-    return getCacheFilePath(
+    return Cache.getCacheFilePath(
       tmpdir,
       'react-packager-bundles-cache-',
       version,
