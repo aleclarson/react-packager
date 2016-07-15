@@ -19,9 +19,15 @@ module.exports = function emitChange(req, res) {
   const filePath = urlObj.pathname.replace(/^\/watcher/, '');
   const fastfs = this._bundler._resolver._depGraph.getFS();
 
-  if (query.event !== 'add' &&
-      query.force !== 'true' &&
-      fastfs._fastPaths[filePath] == null) { return }
+  if (query.event === 'add') {
+    // Always accept 'add' events.
+  } else if (query.force === 'true') {
+    // Allow emitting a change forcefully. (may result in error)
+  } else if (fastfs._fastPaths[filePath]) {
+    // The file path should be cached by a bundle.
+  } else {
+    return;
+  }
 
   const root = fastfs._getRoot(filePath);
   if (!root) {

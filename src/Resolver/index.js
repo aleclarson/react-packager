@@ -30,9 +30,13 @@ const validateOpts = declareOpts({
     type: 'array',
     required: true,
   },
+  assetRoots: {
+    type: 'array',
+    required: false,
+  },
   assetExts: {
     type: 'array',
-    required: true,
+    required: false,
   },
   blacklist: {
     type: 'function',
@@ -96,6 +100,7 @@ class Resolver {
       lazyRoots: [lotus.path],
       projectRoots: opts.projectRoots,
       projectExts: opts.projectExts,
+      assetRoots: opts.assetRoots,
       assetExts: opts.assetExts,
       fileWatcher: opts.fileWatcher,
       activity: Activity,
@@ -236,10 +241,6 @@ class Resolver {
       .then(({name, code}) => {
         return {name, code: defineModuleCode(name, code)};
       });
-  }
-
-  getDebugInfo() {
-    return this._depGraph.getDebugInfo();
   }
 
   getFS() {

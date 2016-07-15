@@ -9,44 +9,69 @@
 'use strict';
 
 const fs = require('io');
-
-const Blacklist = require('./blacklist');
-const Whitelist = require('./whitelist');
+const steal = require('steal');
 
 const cache = Object.create(null);
 
-module.exports = function loadConfig(filePath) {
+function loadConfig(filePath, options = {}) {
 
-  if (cache[filePath]) {
+  if (!options.force && cache[filePath]) {
     return cache[filePath];
   }
 
+  const json = readJSON(filePath);
+
   const config = {
-    path: filePath,
-    reload: reloadConfig,
+    host: steal(json, 'host'),
+    port: steal(json, 'port'),
+    transformer: steal(json, 'transformer'),
+    assetRoots: steal(json, 'assetRoots'),
+    redirect: steal(json, 'redirect'),
+    blacklist: steal(json, 'blacklist'),
+    whitelist: steal(json, 'whitelist'),
   };
 
-  return cache[filePath] = config.reload();
-};
-
-function reloadConfig() {
-  let json;
-  if (fs.sync.exists(this.path)) {
-    json = JSON.parse(fs.sync.read(this.path));
-  } else {
-    json = {};
+  if (options.extraKeys) {
+    options.extraKeys.forEach(key => {
+      config[key] = steal(json, key);
+    });
   }
 
-  // Support custom extensions.
-  this.projectExts = json.projectExts || ['js', 'jsx', 'json'];
-  this.assetExts = json.assetExts || ['png'];
+  const badKeys = Object.keys(json);
+  if (badKeys.length) {
+    log.moat(1);
+    log.white('Unrecognized config keys:');
+    log.plusIndent(2);
+    badKeys.forEach(key => {
+      log.moat(0);
+      log.red(key);
+    });
+    log.popIndent();
+    log.moat(1);
+    log.white('Config location: ');
+    log.yellow(filePath);
+    log.moat(1);
+  }
 
-  // Support global path redirection.
-  this.redirect = json.redirect || Object.create(null);
+  cache[filePath] = config;
+  return config;
+};
 
-  const whitelistRE = Whitelist(json.whitelist);
-  const blacklistRE = Blacklist(json.blacklist);
-  this.blacklist = (filePath) => !whitelistRE.test(filePath) && blacklistRE.test(filePath);
-
-  return this;
+function readJSON(filePath) {
+  if (fs.sync.exists(filePath)) {
+    try {
+      return JSON.parse(fs.sync.read(filePath));
+    } catch(e) {
+      log.moat(1);
+      log.red('Error: ');
+      log.white(e.message);
+      log.moat(0);
+      log.gray(lotus.relative(filePath));
+      log.moat(1);
+      return {};
+    }
+  }
+  return {};
 }
+
+module.exports = loadConfig;

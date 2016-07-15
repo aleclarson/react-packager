@@ -17,12 +17,17 @@ module.exports = function readMap(req, res) {
   if (!this._bundles[hash]) {
     log.moat(1);
     log.red('Error: ');
-    log.white('Invalid source map URL: ' + req.url);
+    log.white('Failed to find sourcemap for bundle: ');
+    log.yellow(hash);
     log.moat(1);
     return;
   }
   return this.buildBundle(hash, options)
   .then(bundle => {
+    // An error was thrown while bundling.
+    if (!bundle) {
+      return;
+    }
     let sourceMap = bundle.getSourceMap({
       minify: options.minify,
       dev: options.dev,

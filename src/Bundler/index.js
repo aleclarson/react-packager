@@ -46,6 +46,14 @@ const validateOpts = declareOpts({
     type: 'array',
     required: true,
   },
+  assetRoots: {
+    type: 'array',
+    required: false,
+  },
+  assetExts: {
+    type: 'array',
+    required: false,
+  },
   assetServer: {
     type: 'object',
     required: true,
@@ -132,7 +140,8 @@ class Bundler {
     this._resolver = new Resolver({
       projectRoots: opts.projectRoots,
       projectExts: opts.projectExts,
-      assetExts: opts.assetServer.extensions,
+      assetRoots: opts.assetRoots,
+      assetExts: opts.assetExts,
       blacklist: opts.blacklist,
       redirect: opts.redirect,
       polyfillModuleNames: opts.polyfillModuleNames,
@@ -218,6 +227,7 @@ class Bundler {
 
   hmrBundle(options, host, port) {
     return this._bundle({
+      verbose: true,
       bundle: new HMRBundle({
         sourceURLFn: this._sourceHMRURL.bind(this, options.platform, host, port),
         sourceMappingURLFn: this._sourceMappingHMRURL.bind(this, options.platform),
@@ -246,25 +256,32 @@ class Bundler {
       resolutionResponse = this._responseCache[responseHash];
     }
 
-    const onResolutionResponse = response => {
-      this._responseCache[responseHash] = response;
-      log.moat(1);
-      log.white('Cached dependencies: ');
-      log.green(responseHash);
-      log.moat(1);
+    const onResolutionResponse = (response, wasFinalized) => {
+      if (!wasFinalized) {
+        this._responseCache[responseHash] = response;
+        log.moat(1);
+        log.white('Cached dependencies: ');
+        log.green(responseHash);
+        log.moat(1);
+      }
+
       bundle.setMainModuleId(response.mainModuleId);
       if (bundle.setNumPrependedModules) {
         bundle.setNumPrependedModules(
           response.numPrependedDependencies + moduleSystemDeps.length
         );
       }
+
+      let dependencies;
       if (entryModuleOnly) {
-        response.dependencies = response.dependencies.filter(module =>
-          module.path.endsWith(entryFile)
-        );
+        dependencies = response.dependencies
+          .filter(module => module.path.endsWith(entryFile));
       } else {
-        response.dependencies = moduleSystemDeps.concat(response.dependencies);
+        dependencies = moduleSystemDeps
+          .concat(response.dependencies);
       }
+
+      return response.copy({dependencies});
     };
 
     const finalizeBundle = ({bundle, transformedModules, response}) =>
@@ -334,14 +351,14 @@ class Bundler {
     bundle,
     hot,
     resolutionResponse,
-    onResolutionResponse = emptyFunction,
+    onResolutionResponse = emptyFunction.thatReturnsArgument,
     onModuleTransformed = emptyFunction,
     finalizeBundle = emptyFunction,
   }) {
-    return Promise(resolutionResponse && resolutionResponse._finalized)
-    .then(finalized => {
-      if (finalized) {
-        return resolutionResponse;
+    const wasFinalized = resolutionResponse && resolutionResponse._finalized;
+    return Promise.try(() => {
+      if (wasFinalized) {
+        return Promise(resolutionResponse, true);
       }
 
       let findEventId;
@@ -360,12 +377,13 @@ class Bundler {
       })
       .then(response => {
         verbose && Activity.endEvent(findEventId);
-        onResolutionResponse(response);
-        return response;
-      });
+        return Promise(response, false);
+      })
     })
+    .then(onResolutionResponse)
     .then(response => {
       const transformEventId = verbose && Activity.startEvent('transform');
+
       return Promise.map(response.dependencies, (module) => {
         return this._transformModule({
           mainModuleName: response.mainModuleId,
@@ -406,17 +424,17 @@ class Bundler {
     this._transformer.invalidateFile(filePath);
 
     const mod = this._resolver.getModuleForPath(filePath);
-    if (!mod) { return }
-
-    Object.keys(this._responseCache).forEach(hash => {
-      if (this._responseCache[hash]._mappings[mod.hash()]) {
-        delete this._responseCache[hash];
-        log.moat(1);
-        log.white('Invalidated dependencies: ');
-        log.red(hash);
-        log.moat(1);
-      }
-    });
+    if (mod) {
+      Object.keys(this._responseCache).forEach(hash => {
+        if (this._responseCache[hash]._mappings[mod.hash()]) {
+          delete this._responseCache[hash];
+          log.moat(1);
+          log.white('Invalidated dependencies: ');
+          log.red(hash);
+          log.moat(1);
+        }
+      });
+    }
   }
 
   getShallowDependencies(entryFile) {
@@ -443,12 +461,8 @@ class Bundler {
         const placeHolder = {};
         dependencies.forEach(dep => {
           if (dep.isAsset()) {
-            const relPath = getPathRelativeToRoot(
-              this._opts.projectRoots,
-              dep.path
-            );
             promises.push(
-              this._opts.assetServer.getAssetData(relPath, options.platform)
+              this._opts.assetServer.getAssetData(dep.path, options.platform)
             );
             ret.push(placeHolder);
           } else {
@@ -502,19 +516,7 @@ class Bundler {
     }
   }
 
-  getGraphDebugInfo() {
-    return this._resolver.getDebugInfo();
-  }
-
   _generateAssetObjAndCode(module, platform = null) {
-    const relPath = getPathRelativeToRoot(this._opts.projectRoots, module.path);
-    let assetUrlPath = path.join('/assets', path.dirname(relPath));
-
-    // On Windows, change backslashes to slashes to get proper URL path from file path.
-    if (path.sep === '\\') {
-      assetUrlPath = assetUrlPath.replace(/\\/g, '/');
-    }
-
     // Test extension against all types supported by image-size module.
     // If it's not one of these, we won't treat it as an image.
     let isImage = [
@@ -523,14 +525,13 @@ class Bundler {
 
     return Promise.all([
       isImage ? imageSize(module.path) : null,
-      this._opts.assetServer.getAssetData(relPath, platform),
+      this._opts.assetServer.getAssetData(module.path, platform),
     ]).then(res => {
       const dimensions = res[0];
       const assetData = res[1];
       const asset = {
         __packager_asset: true,
         fileSystemLocation: path.dirname(module.path),
-        httpServerLocation: assetUrlPath,
         width: dimensions ? dimensions.width / module.resolution : undefined,
         height: dimensions ? dimensions.height / module.resolution : undefined,
         scales: assetData.scales,
@@ -575,6 +576,19 @@ class Bundler {
       return {...options, ...overrides};
     });
   }
+
+  _getPathRelativeToRoot(roots, absPath) {
+    for (let i = 0; i < roots.length; i++) {
+      const relPath = path.relative(roots[i], absPath);
+      if (relPath[0] !== '.') {
+        return relPath;
+      }
+    }
+
+    throw new Error(
+      'Expected root module to be relative to one of the project roots'
+    );
+  }
 }
 
 function generateJSONModule(module) {
@@ -588,19 +602,6 @@ function generateJSONModule(module) {
       virtual: true,
     });
   });
-}
-
-function getPathRelativeToRoot(roots, absPath) {
-  for (let i = 0; i < roots.length; i++) {
-    const relPath = path.relative(roots[i], absPath);
-    if (relPath[0] !== '.') {
-      return relPath;
-    }
-  }
-
-  throw new Error(
-    'Expected root module to be relative to one of the project roots'
-  );
 }
 
 function verifyRootExists(root) {

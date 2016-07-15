@@ -3,4 +3,4 @@
 
 A heavily modified fork of [react-native](https://github.com/facebook/react-native)'s packager.
 
-Compatible with **react-native >= 0.22.0**!
+Compatible with **react-native 0.22.x**!

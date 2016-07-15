@@ -36,15 +36,22 @@ class AssetServer {
   }
 
   get(assetPath, platform = null) {
-    const assetData = getAssetDataFromName(assetPath);
+    const {resolution} = getAssetDataFromName(assetPath);
     return this._getAssetRecord(assetPath, platform).then(record => {
-      for (let i = 0; i < record.scales.length; i++) {
-        if (record.scales[i] >= assetData.resolution) {
-          return fs.async.read(record.files[i]);
+      let filePath;
+      const fileCount = record.files.length;
+      for (let i = 0; i < fileCount; i++) {
+        if (record.scales[i] >= resolution) {
+          filePath = record.files[i];
+          break;
         }
       }
+      if (!filePath) {
+        // Load the largest possible scale.
+        filePath = record.files[fileCount - 1];
+      }
 
-      return fs.async.read(record.files[record.files.length - 1]);
+      return fs.async.read(filePath, {encoding: null});
     });
   }
 
@@ -75,18 +82,12 @@ class AssetServer {
    * 5. Then pick the closest resolution (rounding up) to the requested one
    */
   _getAssetRecord(assetPath, platform = null) {
-    return this._findRoot(
-      this.roots,
-      path.dirname(assetPath),
-    )
-    .then(dir => Promise.all([
-      dir,
-      fs.async.readDir(dir),
-    ]))
-    .then(res => {
-      const dir = res[0];
-      const files = res[1];
-      const asset = getAssetDataFromName(assetPath);
+    this._assertRoot(this.roots, assetPath);
+    const dir = path.dirname(assetPath);
+    const exts = this.extensions.length === 1 ? this.extensions[0] : '{' + this.extensions.join(',') + '}';
+    return fs.async.match(dir + '/*.' + exts)
+    .then(files => {
+      const asset = getAssetDataFromName(path.basename(assetPath));
       const assetName = asset.name + '.' + asset.type;
 
       const map = this._buildAssetMap(dir, files);
@@ -109,19 +110,13 @@ class AssetServer {
     });
   }
 
-  _findRoot(roots, filename) {
-    return Promise.map(roots, (root) => {
-      const filePath = path.join(root, filename);
-      return fs.async.exists(filePath)
-      .then(exists => ({filePath, exists}));
-    }).then(stats => {
-      for (let i = 0; i < stats.length; i++) {
-        if (stats[i].exists) {
-          return stats[i].filePath;
-        }
+  _assertRoot(roots, filename) {
+    for (let i = 0; i < roots.length; i++) {
+      if (filename.startsWith(roots[i])) {
+        return;
       }
-      throw new Error(`No valid root for file: '${filename}'`);
-    });
+    }
+    throw new Error(`File has unknown root: '${filename}'`);
   }
 
   _buildAssetMap(dir, files) {
@@ -131,7 +126,7 @@ class AssetServer {
         return;
       }
 
-      const asset = getAssetDataFromName(assetPath);
+      const asset = getAssetDataFromName(path.basename(assetPath));
       const assetKey = getAssetKey(asset.name + '.' + asset.type, asset.platform);
       let record = map[assetKey];
       if (!record) {
@@ -149,7 +144,7 @@ class AssetServer {
         }
       }
       record.scales.splice(insertIndex, 0, asset.resolution);
-      record.files.splice(insertIndex, 0, path.join(dir, assetPath));
+      record.files.splice(insertIndex, 0, assetPath);
     });
 
     return map;

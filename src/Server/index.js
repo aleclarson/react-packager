@@ -21,6 +21,7 @@ const Promise = require('Promise');
 const parseURLForBundleOptions = require('./utils/parseURLForBundleOptions');
 const declareOpts = require('../utils/declareOpts');
 const path = require('path');
+const steal = require('steal');
 const url = require('url');
 
 const endpoints = require('./api');
@@ -104,7 +105,7 @@ function Server(options) {
   this._fileWatcher.on('all', this._onFileChange.bind(this));
 
   this._assetServer = new AssetServer({
-    roots: opts.assetRoots,
+    roots: opts.projectRoots.concat(opts.assetRoots),
     extensions: opts.assetExts,
   });
 
@@ -171,7 +172,10 @@ Server.prototype = {
 
     Promise.try(() => endpoint.call(this, req, res))
 
-    .then(value => !res.keepAlive && res.end(value))
+    .then(value => {
+      if (res.keepAlive) { return; }
+      res.end(value);
+    })
 
     .fail(error => {
       res.writeHead(error.status || 500, {

@@ -46,10 +46,6 @@ class HMRBundle extends BundleBase {
       this._sourceMappingURLs.push(this._sourceMappingURLFn(moduleTransport.sourcePath));
 
       const sourcePath = path.relative(root, moduleTransport.sourcePath);
-      log.moat(1);
-      log.white('sourcePath = ');
-      log.yellow(moduleTransport.sourcePath);
-      log.moat(1);
       this._sourceURLs.push(this._sourceURLFn(sourcePath));
     });
   }

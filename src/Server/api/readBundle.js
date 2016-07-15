@@ -16,6 +16,11 @@ module.exports = function readBundle(req, res) {
     JSON.stringify(options),
     options,
   ).then(bundle => {
+    // An error was thrown while bundling.
+    if (!bundle) {
+      return;
+    }
+
     const bundleSource = bundle.getSource({
       inlineSourceMap: options.inlineSourceMap,
       minify: options.minify,

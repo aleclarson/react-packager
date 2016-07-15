@@ -8,8 +8,6 @@
  */
 'use strict';
 
-const debug = require('./debug');
-
 module.exports = {
   '*.bundle': require('./readBundle'),
   '*.map': require('./readMap'),
@@ -19,13 +17,21 @@ module.exports = {
   'watcher/**': require('./emitChange'),
   'onchange': require('./onChange'),
   'profile': require('./dumpProfileInfo'),
-  'debug/bundles': debug.bundles,
-  'debug/graph': debug.graph,
-  'resetBundles': function (req, res) {
-    this._bundling = null;
-    this._bundles = Object.create(null);
-    log.moat(1);
-    log.white('Reset all bundles.');
-    log.moat(1);
-  }
+  'reset/bundles': resetBundles,
 };
+
+function resetBundles() {
+
+  // Clear current Bundle promise.
+  this._bundling = null;
+
+  // Clear cached Bundle instances.
+  this._bundles = Object.create(null);
+
+  // Clear cached ResolutionResponse instances.
+  this._bundler._responseCache = Object.create(null);
+
+  log.moat(1);
+  log.white('Reset all bundles.');
+  log.moat(1);
+}

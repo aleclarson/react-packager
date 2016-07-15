@@ -10,6 +10,7 @@
 
 const declareOpts = require('../../utils/declareOpts');
 const getPlatformExtension = require('../../utils/getPlatformExtension');
+const emptyFunction = require('emptyFunction');
 const Promise = require('Promise');
 
 const validateBundleOptions = declareOpts({
@@ -78,8 +79,17 @@ exports.buildBundle = function(hash, options) {
 
   options.verbose = true;
 
-  this._bundling = (this._bundling || Promise())
-    .then(() => _buildBundle(this._bundler, hash, options));
+  this._bundling = (this._bundling || Promise()).then(() => {
+    if (hash) {
+      log.moat(1);
+      log.white('Bundling: ');
+      log.green(hash);
+      log.moat(1);
+    }
+    return this._bundler.bundle(
+      validateBundleOptions(options)
+    ).fail(error => _reportBundleError(error, hash));
+  });
 
   if (hash) {
     this._bundles[hash] = this._bundling;
@@ -111,10 +121,12 @@ exports.rebuildBundles = function() {
     Object.keys(bundles).forEach(hash => {
       const options = JSON.parse(hash);
       bundleChain = bundleChain.then(() => {
-        return _buildBundle(
-          bundler,
-          hash,
-          options,
+        log.moat(1);
+        log.white('Bundling: ');
+        log.green(hash);
+        log.moat(1);
+        return this._bundler.bundle(
+          validateBundleOptions(options)
         ).then(bundle => {
           // Make a throwaway call to getSource to cache the source string.
           bundle.getSource({
@@ -123,13 +135,8 @@ exports.rebuildBundles = function() {
             dev: options.dev,
           });
           return bundle;
-        }, (error) => {
-          log.moat(1);
-          log.red('Error: ');
-          log.white(hash);
-          log.gray.dim(error.stack);
-          log.moat(1);
-        });
+        })
+        .fail((error) => _reportBundleError(error, hash));
       });
       return bundles[hash] = bundleChain;
     });
@@ -137,20 +144,15 @@ exports.rebuildBundles = function() {
   });
 };
 
-function _buildBundle(bundler, hash, options) {
+function _reportBundleError(error, hash) {
+  log.moat(1);
   if (hash) {
-    log.moat(1);
-    log.white('Bundling: ');
-    log.green(hash);
+    log.red(hash);
     log.moat(1);
   }
-  return bundler.bundle(
-    validateBundleOptions(options)
-  ).fail(error => {
-    log.moat(1);
-    log.red('Error: ');
-    log.white(hash);
-    log.gray.dim(error.stack);
-    log.moat(1);
-  });
+  log.red('Error: ');
+  log.white(error.message);
+  log.gray.dim(error.stack.split(log.ln).slice(1).join(log.ln));
+  log.moat(1);
+  return null;
 }

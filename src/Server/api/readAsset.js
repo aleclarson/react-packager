@@ -13,7 +13,7 @@ const url = require('url');
 module.exports = function readSpecificAsset(req, res) {
   const urlObj = url.parse(req.url, true);
   const query = urlObj.query || {};
-  const assetPath = urlObj.pathname.match(/^\/assets\/(.+)$/);
+  const assetPath = urlObj.pathname.match(/^\/assets(\/.+)$/);
   return this._assetServer
     .get(assetPath[1], query.platform)
     .fail(error => {
