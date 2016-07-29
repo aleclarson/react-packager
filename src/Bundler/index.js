@@ -11,21 +11,22 @@
 const { Cache } = require('node-haste');
 const { version } = require('../../package.json');
 
+const Promise = require('Promise');
 const assert = require('assert');
 const emptyFunction = require('emptyFunction');
 const fs = require('io');
 const path = require('path');
-const Promise = require('Promise');
+const sync = require('sync');
 
 const Activity = require('../Activity');
 const Bundle = require('./Bundle');
 const BundlesLayout = require('../BundlesLayout');
-const declareOpts = require('../utils/declareOpts');
 const HMRBundle = require('./HMRBundle');
 const ModuleTransport = require('../utils/ModuleTransport');
 const PrepackBundle = require('./PrepackBundle');
 const Resolver = require('../Resolver');
 const Transformer = require('../JSTransformer');
+const declareOpts = require('../utils/declareOpts');
 
 const imageSize = Promise.ify(require('image-size'));
 
@@ -138,6 +139,8 @@ class Bundler {
     });
 
     this._resolver = new Resolver({
+      cache: this._cache,
+      fileWatcher: opts.fileWatcher,
       projectRoots: opts.projectRoots,
       projectExts: opts.projectExts,
       assetRoots: opts.assetRoots,
@@ -145,20 +148,16 @@ class Bundler {
       blacklist: opts.blacklist,
       redirect: opts.redirect,
       polyfillModuleNames: opts.polyfillModuleNames,
-      moduleFormat: opts.moduleFormat,
-      fileWatcher: opts.fileWatcher,
-      cache: this._cache,
+      onResolutionError: this._onResolutionError.bind(this),
     });
 
     this._transformer = new Transformer({
       projectRoots: opts.projectRoots,
       cache: this._cache,
-      fastfs: this._resolver._depGraph.getFS(),
+      fastfs: this.getFS(),
       transformModulePath: opts.transformModulePath,
       disableInternalTransforms: opts.disableInternalTransforms,
     });
-
-    this._responseCache = Object.create(null);
   }
 
   kill() {
@@ -175,6 +174,105 @@ class Bundler {
       moduleSystemDeps,
       ...options,
     });
+  }
+
+  getFS() {
+    return this._resolver.getFS();
+  }
+
+  hmrBundle(options, host, port) {
+    return this._bundle({
+      verbose: true,
+      bundle: new HMRBundle({
+        sourceURLFn: this._sourceHMRURL.bind(this, options.platform, host, port),
+        sourceMappingURLFn: this._sourceMappingHMRURL.bind(this, options.platform),
+        findRoot: this._findRoot.bind(this),
+      }),
+      hot: true,
+      ...options,
+    });
+  }
+
+  prepackBundle({
+    entryFile,
+    runModule: runMainModule,
+    runBeforeMainModule,
+    sourceMapUrl,
+    dev,
+    platform,
+  }) {
+    const onModuleTransformed = ({module, transformed, response, bundle}) => {
+      return response.getResolution(module)
+      .then(resolution => {
+        const deps = Object.create(null);
+        return resolution.eachResolved((module, modulePath) => {
+          if (module != null) {
+            deps[modulePath] = module.path;
+          }
+        })
+        .then(() => module.getName())
+        .then(name => bundle.addModule(
+          name,
+          transformed,
+          deps,
+          module.isPolyfill(),
+        ));
+      });
+    };
+    const finalizeBundle = ({bundle, response}) => {
+      const {mainModuleId} = response;
+      bundle.finalize({runBeforeMainModule, runMainModule, mainModuleId});
+      return bundle;
+    };
+
+    return this._buildBundle({
+      entryFile,
+      dev,
+      platform,
+      onModuleTransformed,
+      finalizeBundle,
+      bundle: new PrepackBundle(sourceMapUrl),
+    });
+  }
+
+  getShallowDependencies(entryFile) {
+    return this._resolver.getShallowDependencies(entryFile);
+  }
+
+  getModuleForPath(entryFile) {
+    return this._resolver.getModuleForPath(entryFile);
+  }
+
+  getDependencies(options) {
+    return this._resolver.getDependencies(options);
+  }
+
+  getOrderedDependencyPaths(options) {
+    return this.getDependencies(options).then(
+      ({ dependencies }) => {
+        const ret = [];
+        const promises = [];
+        const placeHolder = {};
+        dependencies.forEach(dep => {
+          if (dep.isAsset()) {
+            promises.push(
+              this._opts.assetServer.getAssetData(dep.path, options.platform)
+            );
+            ret.push(placeHolder);
+          } else {
+            ret.push(dep.path);
+          }
+        });
+
+        return Promise.all(promises).then(assetsData => {
+          assetsData.forEach(({ files }) => {
+            const index = ret.indexOf(placeHolder);
+            ret.splice(index, 1, ...files);
+          });
+          return ret;
+        });
+      }
+    );
   }
 
   _sourceHMRURL(platform, host, port, path) {
@@ -213,7 +311,7 @@ class Bundler {
   }
 
   _findRoot(filePath) {
-    const fastfs = this._resolver.getFS();
+    const fastfs = this.getFS();
     const isRoot = (root) => filePath.startsWith(root);
     let root = this._opts.projectRoots.find(isRoot);
     if (!root && fastfs._fastPaths[filePath]) {
@@ -223,19 +321,6 @@ class Bundler {
       throw new Error(`'filePath' belongs to an unknown root: '${filePath}'`);
     }
     return root;
-  }
-
-  hmrBundle(options, host, port) {
-    return this._bundle({
-      verbose: true,
-      bundle: new HMRBundle({
-        sourceURLFn: this._sourceHMRURL.bind(this, options.platform, host, port),
-        sourceMappingURLFn: this._sourceMappingHMRURL.bind(this, options.platform),
-        findRoot: this._findRoot.bind(this),
-      }),
-      hot: true,
-      ...options,
-    });
   }
 
   _bundle({
@@ -249,22 +334,9 @@ class Bundler {
     moduleSystemDeps = [],
     hot,
     entryModuleOnly,
-    resolutionResponse
+    onResolutionError,
   }) {
-    const responseHash = JSON.stringify({ entryFile, platform, dev, hot });
-    if (!resolutionResponse && this._responseCache[responseHash]) {
-      resolutionResponse = this._responseCache[responseHash];
-    }
-
-    const onResolutionResponse = (response, wasFinalized) => {
-      if (!wasFinalized) {
-        this._responseCache[responseHash] = response;
-        log.moat(1);
-        log.white('Cached dependencies: ');
-        log.green(responseHash);
-        log.moat(1);
-      }
-
+    const onResolutionResponse = (response) => {
       bundle.setMainModuleId(response.mainModuleId);
       if (bundle.setNumPrependedModules) {
         bundle.setNumPrependedModules(
@@ -299,47 +371,9 @@ class Bundler {
       verbose,
       bundle,
       hot,
-      resolutionResponse,
+      onResolutionError,
       onResolutionResponse,
       finalizeBundle,
-    });
-  }
-
-  prepackBundle({
-    entryFile,
-    runModule: runMainModule,
-    runBeforeMainModule,
-    sourceMapUrl,
-    dev,
-    platform,
-  }) {
-    const onModuleTransformed = ({module, transformed, response, bundle}) => {
-      const deps = Object.create(null);
-      const pairs = response.getResolvedDependencyPairs(module);
-      if (pairs) {
-        pairs.forEach(pair => {
-          deps[pair[0]] = pair[1].path;
-        });
-      }
-
-      return module.getName().then(name => {
-        console.log(name);
-        bundle.addModule(name, transformed, deps, module.isPolyfill());
-      });
-    };
-    const finalizeBundle = ({bundle, response}) => {
-      const {mainModuleId} = response;
-      bundle.finalize({runBeforeMainModule, runMainModule, mainModuleId});
-      return bundle;
-    };
-
-    return this._buildBundle({
-      entryFile,
-      dev,
-      platform,
-      onModuleTransformed,
-      finalizeBundle,
-      bundle: new PrepackBundle(sourceMapUrl),
     });
   }
 
@@ -350,34 +384,43 @@ class Bundler {
     verbose,
     bundle,
     hot,
-    resolutionResponse,
+    onResolutionError = emptyFunction,
     onResolutionResponse = emptyFunction.thatReturnsArgument,
     onModuleTransformed = emptyFunction,
     finalizeBundle = emptyFunction,
   }) {
-    const wasFinalized = resolutionResponse && resolutionResponse._finalized;
-    return Promise.try(() => {
-      if (wasFinalized) {
-        return Promise(resolutionResponse, true);
-      }
-
-      let findEventId;
-      return this._resolver.load().then(() => {
-        findEventId = verbose && Activity.startEvent('find dependencies');
-
-        if (resolutionResponse) {
-          return resolutionResponse.onFinalize();
-        }
-        return this.getDependencies({
-          entryFile,
-          dev,
-          platform,
-          verbose,
-        });
+    return this._resolver.load().then(() => {
+      const findEventId = verbose && Activity.startEvent('find dependencies');
+      let threw = false;
+      return this.getDependencies({
+        entryFile,
+        dev,
+        platform,
+        onProgress: verbose && (() => {
+          if (threw) {
+            return;
+          }
+          log('•');
+          if (log.line.length >= 50) {
+            log.moat(0);
+          }
+        }),
+        onError: () => {
+          if (threw) {
+            return false;
+          }
+          threw = true;
+          this._onResolutionError.apply(this, arguments);
+          onResolutionError.apply(null, arguments);
+          return false; // Prevent 'depGraph._onResolutionError'
+        },
       })
       .then(response => {
-        verbose && Activity.endEvent(findEventId);
-        return Promise(response, false);
+        if (verbose) {
+          log.moat(1);
+          Activity.endEvent(findEventId);
+        }
+        return response.onceReady();
       })
     })
     .then(onResolutionResponse)
@@ -415,70 +458,24 @@ class Bundler {
     });
   }
 
-  invalidateFile(filePath) {
+  _onResolutionError(requiredPath, fromModule) {
+    log.moat(1);
+    log.red('Error: ');
+    log('Could not resolve ');
+    log.gray(requiredPath);
+    log(' from ');
+    log.gray(fromModule.path);
+    log.moat(1);
+  }
+
+  _processFileChange(type, filePath, root) {
     if (this._transformOptionsModule) {
       this._transformOptionsModule.onFileChange &&
         this._transformOptionsModule.onFileChange();
     }
 
-    this._transformer.invalidateFile(filePath);
-
-    const mod = this._resolver.getModuleForPath(filePath);
-    if (mod) {
-      Object.keys(this._responseCache).forEach(hash => {
-        if (this._responseCache[hash]._mappings[mod.hash()]) {
-          delete this._responseCache[hash];
-          log.moat(1);
-          log.white('Invalidated dependencies: ');
-          log.red(hash);
-          log.moat(1);
-        }
-      });
-    }
-  }
-
-  getShallowDependencies(entryFile) {
-    return this._resolver.getShallowDependencies(entryFile);
-  }
-
-  stat(filePath) {
-    return this._resolver.stat(filePath);
-  }
-
-  getModuleForPath(entryFile) {
-    return this._resolver.getModuleForPath(entryFile);
-  }
-
-  getDependencies(options) {
-    return this._resolver.getDependencies(options);
-  }
-
-  getOrderedDependencyPaths(options) {
-    return this.getDependencies(options).then(
-      ({ dependencies }) => {
-        const ret = [];
-        const promises = [];
-        const placeHolder = {};
-        dependencies.forEach(dep => {
-          if (dep.isAsset()) {
-            promises.push(
-              this._opts.assetServer.getAssetData(dep.path, options.platform)
-            );
-            ret.push(placeHolder);
-          } else {
-            ret.push(dep.path);
-          }
-        });
-
-        return Promise.all(promises).then(assetsData => {
-          assetsData.forEach(({ files }) => {
-            const index = ret.indexOf(placeHolder);
-            ret.splice(index, 1, ...files);
-          });
-          return ret;
-        });
-      }
-    );
+    const absPath = path.join(root, filePath);
+    this._transformer.invalidateFile(absPath);
   }
 
   _transformModule({
@@ -609,12 +606,4 @@ function verifyRootExists(root) {
   assert(fs.sync.isDir(root), 'Root has to be a valid directory');
 }
 
-class DummyCache {
-  get(filepath, field, loaderCb) {
-    return loaderCb();
-  }
-
-  end(){}
-  invalidate(filepath){}
-}
 module.exports = Bundler;

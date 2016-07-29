@@ -102,7 +102,7 @@ function Server(options) {
   this._fileChangeListeners = [];
 
   this._fileWatcher = opts.fileWatcher;
-  this._fileWatcher.on('all', this._onFileChange.bind(this));
+  this._fileWatcher.on('all', this._processFileChange.bind(this));
 
   this._assetServer = new AssetServer({
     roots: opts.projectRoots.concat(opts.assetRoots),
@@ -191,11 +191,6 @@ Server.prototype = {
           lineNumber: error.lineNumber,
         }];
         res.end(JSON.stringify(error));
-
-        if (error.type === 'NotFoundError') {
-          const hash = JSON.stringify(parseURLForBundleOptions(req.url));
-          delete this._bundles[hash];
-        }
       } else {
         log.moat(1);
         log.white(error.stack);
@@ -209,9 +204,9 @@ Server.prototype = {
     });
   },
 
-  _onFileChange(type, filepath, root) {
-    const absPath = path.join(root, filepath);
-    this._bundler.invalidateFile(absPath);
+  _processFileChange(type, filePath, root) {
+    const absPath = path.join(root, filePath);
+    this._bundler._processFileChange(type, filePath, root);
 
     // If Hot Loading is enabled avoid rebuilding bundles and sending live
     // updates. Instead, send the HMR updates right away and clear the bundles
@@ -219,7 +214,7 @@ Server.prototype = {
     if (this._hmrFileChangeListener) {
       // Clear cached bundles in case user reloads
       this._bundles = Object.create(null);
-      this._hmrFileChangeListener(absPath, this._bundler.stat(absPath));
+      this._hmrFileChangeListener(absPath, this._bundler.getFS.stat(absPath));
       return;
     }
 

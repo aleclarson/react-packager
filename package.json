@@ -43,6 +43,7 @@
     "io": "aleclarson/io#2.0.0",
     "joi": "^6.10.1",
     "log": "aleclarson/log#1.0.0",
+    "lotus-require": "aleclarson/lotus-require#3.1.0",
     "micromatch": "^2.3.8",
     "node-haste": "aleclarson/node-haste#2.12.0",
     "sync": "aleclarson/sync#1.0.0",

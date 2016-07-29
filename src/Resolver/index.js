@@ -8,141 +8,116 @@
  */
 'use strict';
 
-const path = require('path');
+const {
+  Cache,
+  DependencyGraph,
+  FileWatcher,
+  Polyfill,
+} = require('node-haste');
+
 const Promise = require('Promise');
-const { DependencyGraph, Polyfill } = require('node-haste');
+const PureObject = require('PureObject');
+const Type = require('Type');
+const assertTypes = require('assertTypes');
+const mergeDefaults = require('mergeDefaults');
+const path = require('path');
 
 const Activity = require('../Activity');
-const declareOpts = require('../utils/declareOpts');
 const replacePatterns = require('../utils/replacePatterns');
-const platformBlacklist = require('../utils/platformBlacklist');
 
-const validateOpts = declareOpts({
-  lazyRoots: {
-    type: 'array',
-    required: false,
-  },
-  projectRoots: {
-    type: 'array',
-    required: true,
-  },
-  projectExts: {
-    type: 'array',
-    required: true,
-  },
-  assetRoots: {
-    type: 'array',
-    required: false,
-  },
-  assetExts: {
-    type: 'array',
-    required: false,
-  },
-  blacklist: {
-    type: 'function',
-    required: false,
-  },
-  redirect: {
-    type: 'object',
-    required: false,
-  },
-  polyfillModuleNames: {
-    type: 'array',
-    default: [],
-  },
-  moduleFormat: {
-    type: 'string',
-    default: 'haste',
-  },
-  fileWatcher: {
-    type: 'object',
-    required: true,
-  },
-  cache: {
-    type: 'object',
-    required: true,
-  },
-});
+const type = Type('Resolver')
 
-const getDependenciesValidateOpts = declareOpts({
-  entryFile: {
-    type: 'string',
-    required: true,
-  },
-  dev: {
-    type: 'boolean',
-    default: true,
-  },
-  platform: {
-    type: 'string',
-    required: false,
-  },
-  unbundle: {
-    type: 'boolean',
-    default: false,
-  },
-  recursive: {
-    type: 'boolean',
-    default: true,
-  },
-  verbose: {
-    type: 'boolean',
-    required: false,
-  },
-});
+type.defineOptions({
+  cache: Cache.isRequired,
+  fileWatcher: FileWatcher.isRequired,
+  projectRoots: Array,
+  projectExts: Array,
+  assetRoots: Array,
+  assetExts: Array,
+  lazyRoots: Array,
+  platforms: Array,
+  blacklist: Function,
+  redirect: PureObject,
+  polyfillModuleNames: Array,
+  extraNodeModules: Object,
+  onResolutionError: Function,
+})
 
-class Resolver {
+type.defineValues({
 
-  constructor(options) {
-    const opts = validateOpts(options);
+  _polyfillModuleNames(opts) {
+    return opts.polyfillModuleNames || [];
+  },
 
-    this._depGraph = new DependencyGraph({
-      lazyRoots: [lotus.path],
+  _graph(opts) {
+    return DependencyGraph({
+      cache: opts.cache,
+      fileWatcher: opts.fileWatcher,
       projectRoots: opts.projectRoots,
       projectExts: opts.projectExts,
       assetRoots: opts.assetRoots,
       assetExts: opts.assetExts,
-      fileWatcher: opts.fileWatcher,
-      activity: Activity,
-      platforms: ['ios', 'android'],
+      lazyRoots: opts.lazyRoots || [lotus.path],
+      platforms: opts.platforms || ['ios', 'android', 'web'],
       preferNativePlatform: true,
-      cache: opts.cache,
-      shouldThrowOnUnresolvedErrors: (_, platform) => platform === 'ios',
       blacklist: opts.blacklist,
       redirect: opts.redirect,
+      activity: Activity,
+      extraNodeModules: opts.extraNodeModules,
+      onResolutionError: opts.onResolutionError,
     });
+  },
+})
 
-    this._polyfillModuleNames = opts.polyfillModuleNames || [];
-  }
+type.defineMethods({
 
   load() {
-    return this._depGraph.load();
-  }
+    return this._graph.load();
+  },
+
+  getFS() {
+    return this._graph.getFS();
+  },
 
   getShallowDependencies(entryFile) {
-    return this._depGraph.getShallowDependencies(entryFile);
-  }
-
-  stat(filePath) {
-    return this._depGraph.getFS().stat(filePath);
-  }
+    return this._graph.getShallowDependencies(entryFile);
+  },
 
   getModuleForPath(entryFile) {
-    return this._depGraph.getModuleForPath(entryFile);
-  }
+    return this._graph.getModuleForPath(entryFile);
+  },
 
   getDependencies(options) {
-    const opts = getDependenciesValidateOpts(options);
-    opts.blacklist = platformBlacklist(opts.platform);
-    return this._depGraph.getDependencies(opts)
-      .then(resolutionResponse => {
-        this._getPolyfillDependencies().reverse().forEach(
-          polyfill => resolutionResponse.prependDependency(polyfill)
-        );
+    assertTypes(options, {
+      entryFile: String,
+      dev: Boolean.Maybe,
+      unbundle: Boolean.Maybe,
+      recursive: Boolean.Maybe,
+      platform: String.Maybe,
+      onProgress: Function.Maybe,
+      onError: Function.Maybe,
+    });
+    mergeDefaults(options, {
+      dev: true,
+      unbundle: false,
+    });
 
-        return resolutionResponse.finalize();
+    return this._graph.getDependencies(options)
+      .then(response => {
+        let dependencies = response.dependencies.slice();
+        let numPrependedDependencies = response.numPrependedDependencies;
+        this._getPolyfillDependencies()
+          .reverse()
+          .forEach(polyfill => {
+            dependencies.unshift(polyfill);
+            numPrependedDependencies += 1;
+          });
+        return response.copy({
+          dependencies,
+          numPrependedDependencies,
+        });
       });
-  }
+  },
 
   getModuleSystemDependencies(options) {
 
@@ -162,27 +137,7 @@ class Resolver {
       id: moduleName,
       dependencies: [],
     }));
-  }
-
-  _getPolyfillDependencies() {
-    const polyfillModuleNames = [
-      path.join(__dirname, 'polyfills/polyfills.js'),
-      path.join(__dirname, 'polyfills/error-guard.js'),
-      path.join(__dirname, 'polyfills/String.prototype.es6.js'),
-      path.join(__dirname, 'polyfills/Array.prototype.es6.js'),
-      path.join(__dirname, 'polyfills/Array.es6.js'),
-      path.join(__dirname, 'polyfills/Object.es7.js'),
-      path.join(__dirname, 'polyfills/babelHelpers.js'),
-    ].concat(this._polyfillModuleNames);
-
-    return polyfillModuleNames.map(
-      (polyfillModuleName, idx) => new Polyfill({
-        file: polyfillModuleName,
-        id: polyfillModuleName,
-        dependencies: polyfillModuleNames.slice(0, idx),
-      })
-    );
-  }
+  },
 
   resolveRequires(resolutionResponse, module, code) {
     return Promise.try(() => {
@@ -198,17 +153,12 @@ class Resolver {
       }
 
       const resolvedDeps = Object.create(null);
-      const resolvedDepsArr = [];
-
-      const pairs = resolutionResponse.getResolvedDependencyPairs(module);
-      return Promise.map(pairs, ([depName, depModule]) => {
-        if (depModule) {
-          return depModule.getName().then(name => {
-            resolvedDeps[depName] = name;
-            resolvedDepsArr.push(name);
-          });
-        }
-      }).then(() => {
+      const resolution = resolutionResponse.getResolution(module);
+      return resolution.filterResolved((dependency, depName) =>
+        dependency && dependency.getName().then(depId => {
+          resolvedDeps[depName] = depId;
+        }))
+      .then(() => {
         const relativizeCode = (codeMatch, pre, quot, depName, post) => {
           const depId = resolvedDeps[depName];
           if (depId) {
@@ -228,7 +178,7 @@ class Resolver {
         });
       });
     });
-  }
+  },
 
   wrapModule(resolutionResponse, module, code) {
     if (module.isPolyfill()) {
@@ -241,12 +191,34 @@ class Resolver {
       .then(({name, code}) => {
         return {name, code: defineModuleCode(name, code)};
       });
-  }
+  },
 
-  getFS() {
-    return this._depGraph.getFS();
-  }
-}
+  _getPolyfillDependencies() {
+    const polyfillModuleNames = [
+      path.join(__dirname, 'polyfills/polyfills.js'),
+      path.join(__dirname, 'polyfills/error-guard.js'),
+      path.join(__dirname, 'polyfills/String.prototype.es6.js'),
+      path.join(__dirname, 'polyfills/Array.prototype.es6.js'),
+      path.join(__dirname, 'polyfills/Array.es6.js'),
+      path.join(__dirname, 'polyfills/Object.es7.js'),
+      path.join(__dirname, 'polyfills/babelHelpers.js'),
+    ].concat(this._polyfillModuleNames);
+
+    return polyfillModuleNames.map(
+      (polyfillModuleName, idx) => new Polyfill({
+        file: polyfillModuleName,
+        id: polyfillModuleName,
+        dependencies: polyfillModuleNames.slice(0, idx),
+      })
+    );
+  },
+})
+
+module.exports = type.build()
+
+//
+// Helpers
+//
 
 const moduleArgNames = ['global', 'require', 'module', 'exports'].join (', ');
 
@@ -280,5 +252,3 @@ function definePolyfillCode(code) {
 function quoteWrap(string) {
   return '\'' + string + '\'';
 }
-
-module.exports = Resolver;

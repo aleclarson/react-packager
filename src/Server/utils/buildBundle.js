@@ -65,6 +65,10 @@ const validateBundleOptions = declareOpts({
     type: 'boolean',
     default: false,
   },
+  onResolutionError: {
+    type: 'function',
+    default: emptyFunction,
+  },
 });
 
 exports.buildBundle = function(hash, options) {
@@ -78,6 +82,11 @@ exports.buildBundle = function(hash, options) {
   }
 
   options.verbose = true;
+  if (hash) {
+    options.onResolutionError = () => {
+      delete this._bundles[hash];
+    };
+  }
 
   this._bundling = (this._bundling || Promise()).then(() => {
     if (hash) {

@@ -17,7 +17,11 @@ module.exports = function emitChange(req, res) {
   const query = urlObj.query || {};
 
   const filePath = urlObj.pathname.replace(/^\/watcher/, '');
-  const fastfs = this._bundler._resolver._depGraph.getFS();
+  if (!fs.sync.exists(filePath)) {
+    return;
+  }
+
+  const fastfs = this._bundler.getFS();
 
   if (query.event === 'add') {
     // Always accept 'add' events.

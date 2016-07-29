@@ -29,7 +29,7 @@ function resetBundles() {
   this._bundles = Object.create(null);
 
   // Clear cached ResolutionResponse instances.
-  this._bundler._responseCache = Object.create(null);
+  this._resolver._responseCache = Object.create(null);
 
   log.moat(1);
   log.white('Reset all bundles.');
