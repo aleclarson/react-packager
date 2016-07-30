@@ -40,7 +40,7 @@
     "emptyFunction": "aleclarson/emptyFunction#1.0.0",
     "graceful-fs": "^4.1.4",
     "image-size": "^0.3.5",
-    "io": "aleclarson/io#2.0.0",
+    "io": "aleclarson/io#2.1.0",
     "joi": "^6.10.1",
     "log": "aleclarson/log#1.0.0",
     "lotus-require": "aleclarson/lotus-require#3.1.0",

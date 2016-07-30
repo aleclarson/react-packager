@@ -182,9 +182,7 @@ Server.prototype = {
         'Content-Type': 'application/json; charset=UTF-8',
       });
 
-      if (error.type === 'TransformError' ||
-          error.type === 'NotFoundError' ||
-          error.type === 'UnableToResolveError') {
+      if (error.type === 'TransformError') {
         error.errors = [{
           description: error.description,
           filename: error.filename,
@@ -192,13 +190,14 @@ Server.prototype = {
         }];
         res.end(JSON.stringify(error));
       } else {
-        log.moat(1);
-        log.white(error.stack);
-        log.moat(1);
+        if (error.type !== 'UnableToResolveError') {
+          log.moat(1);
+          log.white(error.stack);
+          log.moat(1);
+        }
         res.end(JSON.stringify({
-          type: 'InternalError',
-          message: 'react-packager has encountered an internal error, ' +
-            'please check your terminal error output for more details',
+          type: error.type || 'InternalError',
+          message: error.message,
         }));
       }
     });

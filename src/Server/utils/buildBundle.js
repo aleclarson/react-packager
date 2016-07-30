@@ -10,101 +10,49 @@
 
 const declareOpts = require('../../utils/declareOpts');
 const getPlatformExtension = require('../../utils/getPlatformExtension');
+const assertType = require('assertType');
+const assertTypes = require('assertTypes');
 const emptyFunction = require('emptyFunction');
+const mergeDefaults = require('mergeDefaults');
 const Promise = require('Promise');
 
-const validateBundleOptions = declareOpts({
-  sourceMapUrl: {
-    type: 'string',
-    required: false,
-  },
-  entryFile: {
-    type: 'string',
-    required: true,
-  },
-  dev: {
-    type: 'boolean',
-    default: true,
-  },
-  verbose: {
-    type: 'boolean',
-    default: false,
-  },
-  minify: {
-    type: 'boolean',
-    default: false,
-  },
-  runModule: {
-    type: 'boolean',
-    default: true,
-  },
-  inlineSourceMap: {
-    type: 'boolean',
-    default: false,
-  },
-  platform: {
-    type: 'string',
-    required: true,
-  },
-  runBeforeMainModule: {
-    type: 'array',
-    default: [
-      // Ensures essential globals are available and are patched correctly.
-      'InitializeJavaScriptAppEngine'
-    ],
-  },
-  unbundle: {
-    type: 'boolean',
-    default: false,
-  },
-  hot: {
-    type: 'boolean',
-    default: false,
-  },
-  entryModuleOnly: {
-    type: 'boolean',
-    default: false,
-  },
-  onResolutionError: {
-    type: 'function',
-    default: emptyFunction,
-  },
-});
+exports.buildBundle = function(bundleId, options) {
+  assertType(bundleId, String);
+  assertType(options, Object);
 
-exports.buildBundle = function(hash, options) {
-
-  if (hash && this._bundles[hash]) {
-    return this._bundles[hash];
+  const bundles = this._bundles;
+  if (bundles[bundleId]) {
+    return bundles[bundleId];
   }
 
   if (!options.platform) {
     options.platform = getPlatformExtension(options.entryFile);
   }
 
-  options.verbose = true;
-  if (hash) {
-    options.onResolutionError = () => {
-      delete this._bundles[hash];
-    };
-  }
+  this._bundling = Promise(this._bundling)
+    .fail(emptyFunction)
+    .then(() => {
+      // log.moat(1);
+      // log.white('Bundling: ');
+      // log.green(bundleId);
+      // log.moat(1);
+      options.verbose = true;
+      return this._bundler.bundle(
+        validateBundleOptions(options)
+      ).fail(error => {
+        // if (error.type === 'UnableToResolveError') {
+        //   log.moat(1);
+        //   log.white('Deleted bundle: ');
+        //   log.red(bundleId);
+        //   log.moat(1);
+        // }
 
-  this._bundling = (this._bundling || Promise()).then(() => {
-    if (hash) {
-      log.moat(1);
-      log.white('Bundling: ');
-      log.green(hash);
-      log.moat(1);
-    }
-    return this._bundler.bundle(
-      validateBundleOptions(options)
-    ).fail(error => _reportBundleError(error, hash));
-  });
+        delete bundles[bundleId];
+        throw error;
+      });
+    });
 
-  if (hash) {
-    this._bundles[hash] = this._bundling;
-  }
-
-  return this._bundling;
+  return bundles[bundleId] = this._bundling;
 };
 
 exports.buildBundleForHMR = function(modules, host, port) {
@@ -115,9 +63,9 @@ exports.buildPrepackBundle = function(options) {
   if (!options.platform) {
     options.platform = getPlatformExtension(options.entryFile);
   }
-
-  const bundleOptions = validateBundleOptions(options);
-  return this._bundler.prepackBundle(bundleOptions);
+  return this._bundler.prepackBundle(
+    validateBundleOptions(options)
+  );
 };
 
 exports.rebuildBundles = function() {
@@ -127,13 +75,13 @@ exports.rebuildBundles = function() {
     this._bundling || Promise()
   ).then(() => {
     let bundleChain = Promise();
-    Object.keys(bundles).forEach(hash => {
-      const options = JSON.parse(hash);
+    Object.keys(bundles).forEach(bundleId => {
+      const options = JSON.parse(bundleId);
       bundleChain = bundleChain.then(() => {
-        log.moat(1);
-        log.white('Bundling: ');
-        log.green(hash);
-        log.moat(1);
+        // log.moat(1);
+        // log.white('Bundling: ');
+        // log.green(bundleId);
+        // log.moat(1);
         return this._bundler.bundle(
           validateBundleOptions(options)
         ).then(bundle => {
@@ -145,23 +93,38 @@ exports.rebuildBundles = function() {
           });
           return bundle;
         })
-        .fail((error) => _reportBundleError(error, hash));
+        .fail((error) => _reportBundleError(error, bundleId));
       });
-      return bundles[hash] = bundleChain;
+      return bundles[bundleId] = bundleChain;
     });
     return bundleChain;
   });
 };
 
-function _reportBundleError(error, hash) {
-  log.moat(1);
-  if (hash) {
-    log.red(hash);
-    log.moat(1);
-  }
-  log.red('Error: ');
-  log.white(error.message);
-  log.gray.dim(error.stack.split(log.ln).slice(1).join(log.ln));
-  log.moat(1);
-  return null;
+function validateBundleOptions(options) {
+  assertTypes(options, {
+    sourceMapUrl: String,
+    entryFile: String,
+    platform: String,
+    dev: Boolean.Maybe,
+    verbose: Boolean.Maybe,
+    minify: Boolean.Maybe,
+    runModule: Boolean.Maybe,
+    inlineSourceMap: Boolean.Maybe,
+    runBeforeMainModule: Array.Maybe,
+    unbundle: Boolean.Maybe,
+    hot: Boolean.Maybe,
+    entryModuleOnly: Boolean.Maybe,
+    onResolutionError: Function.Maybe,
+  })
+  mergeDefaults(options, {
+    dev: true,
+    runModule: true,
+    runBeforeMainModule: [
+      // Ensures essential globals are available and are patched correctly.
+      'InitializeJavaScriptAppEngine'
+    ],
+    onResolutionError: emptyFunction,
+  })
+  return options;
 }

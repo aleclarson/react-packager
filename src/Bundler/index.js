@@ -357,7 +357,7 @@ class Bundler {
     };
 
     const finalizeBundle = ({bundle, transformedModules, response}) =>
-      Promise.map(transformedModules, ({module, transformed}) =>
+      Promise.chain(transformedModules, ({module, transformed}) =>
         bundle.addModule(this._resolver, response, module, transformed)
       ).then(() => {
         bundle.finalize({runBeforeMainModule, runMainModule});
@@ -389,14 +389,15 @@ class Bundler {
     onModuleTransformed = emptyFunction,
     finalizeBundle = emptyFunction,
   }) {
-    return this._resolver.load().then(() => {
+    const self = this;
+    let threw = false;
+    return self._resolver.load().then(() => {
       const findEventId = verbose && Activity.startEvent('find dependencies');
-      let threw = false;
-      return this.getDependencies({
+      return self.getDependencies({
         entryFile,
         dev,
         platform,
-        onProgress: verbose && (() => {
+        onProgress: verbose && function() {
           if (threw) {
             return;
           }
@@ -404,31 +405,39 @@ class Bundler {
           if (log.line.length >= 50) {
             log.moat(0);
           }
-        }),
-        onError: () => {
+        },
+        onError() {
           if (threw) {
-            return false;
+            return false; // Return false to prevent 'depGraph._onResolutionError'
           }
           threw = true;
-          this._onResolutionError.apply(this, arguments);
+          self._onResolutionError.apply(self, arguments);
           onResolutionError.apply(null, arguments);
-          return false; // Prevent 'depGraph._onResolutionError'
+          return false;
         },
       })
       .then(response => {
+        assert(response.mainModuleId, '\'mainModuleId\' should exist here!');
         if (verbose) {
           log.moat(1);
           Activity.endEvent(findEventId);
         }
-        return response.onceReady();
-      })
+        if (threw) {
+          const error = Error('Resolution error prevented bundle from finalizing!');
+          error.type = 'UnableToResolveError';
+          log.moat(1);
+          log.red('Error: ');
+          log.white(error.message);
+          log.moat(1);
+          throw error;
+        }
+        return onResolutionResponse(response);
+      });
     })
-    .then(onResolutionResponse)
     .then(response => {
       const transformEventId = verbose && Activity.startEvent('transform');
-
       return Promise.map(response.dependencies, (module) => {
-        return this._transformModule({
+        return self._transformModule({
           mainModuleName: response.mainModuleId,
           bundle,
           module,
@@ -453,8 +462,7 @@ class Bundler {
           transformedModules,
           response,
         });
-      })
-      .then(() => bundle);
+      });
     });
   }
 
