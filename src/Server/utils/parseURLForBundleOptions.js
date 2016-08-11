@@ -30,7 +30,7 @@ module.exports = function parseURLForBundleOptions(reqUrl) {
 
   const dev = boolFromQuery(query, 'dev', true);
   const minify = boolFromQuery(query, 'minify');
-  const hot = boolFromQuery(query, 'hot', dev); // TODO: Set the default back to `false` when native defaults are used on app launch.
+  const hot = boolFromQuery(query, 'hot', false);
   const runModule = boolFromQuery(query, 'runModule', true);
   const inlineSourceMap = boolFromQuery(query, 'inlineSourceMap', false);
   const entryModuleOnly = boolFromQuery(query, 'entryModuleOnly', false);

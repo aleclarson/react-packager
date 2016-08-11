@@ -12,10 +12,9 @@ const parseURLForBundleOptions = require('../utils/parseURLForBundleOptions');
 
 module.exports = function readBundle(req, res) {
   const options = parseURLForBundleOptions(req.url);
-  return this.buildBundle(
-    JSON.stringify(options),
-    options,
-  ).then(bundle => {
+  const bundleId = JSON.stringify(options);
+  return this.buildBundle(bundleId, options)
+  .then(bundle => {
     // An error was thrown while bundling.
     if (!bundle) {
       return;

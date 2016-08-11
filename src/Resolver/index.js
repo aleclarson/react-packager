@@ -154,10 +154,18 @@ type.defineMethods({
 
       const resolvedDeps = Object.create(null);
       const resolution = resolutionResponse.getResolution(module);
-      return resolution.filterResolved((dependency, depName) =>
-        dependency && dependency.getName().then(depId => {
+      return resolution.filterResolved((dependency, depName) => {
+        return dependency && dependency.getName().then(depId => {
           resolvedDeps[depName] = depId;
-        }))
+        }).fail(error => {
+          if (/Unable to find file with path/.test(error.message)) {
+            resolution.markDirty(dependency.path);
+            resolutionResponse.deleteResolution(dependency);
+          } else {
+            throw error;
+          }
+        })
+      })
       .then(() => {
         const relativizeCode = (codeMatch, pre, quot, depName, post) => {
           const depId = resolvedDeps[depName];

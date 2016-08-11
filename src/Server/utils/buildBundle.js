@@ -32,20 +32,20 @@ exports.buildBundle = function(bundleId, options) {
   this._bundling = Promise(this._bundling)
     .fail(emptyFunction)
     .then(() => {
-      // log.moat(1);
-      // log.white('Bundling: ');
-      // log.green(bundleId);
-      // log.moat(1);
+      log.moat(1);
+      log.white('Bundling: ');
+      log.green(bundleId);
+      log.moat(1);
       options.verbose = true;
       return this._bundler.bundle(
         validateBundleOptions(options)
       ).fail(error => {
-        // if (error.type === 'UnableToResolveError') {
-        //   log.moat(1);
-        //   log.white('Deleted bundle: ');
-        //   log.red(bundleId);
-        //   log.moat(1);
-        // }
+        if (error.type === 'UnableToResolveError') {
+          log.moat(1);
+          log.white('Deleted bundle: ');
+          log.red(bundleId);
+          log.moat(1);
+        }
 
         delete bundles[bundleId];
         throw error;

@@ -264,7 +264,7 @@ class Bundler {
           }
         });
 
-        return Promise.all(promises).then(assetsData => {
+        return Promise.map(promises).then(assetsData => {
           assetsData.forEach(({ files }) => {
             const index = ret.indexOf(placeHolder);
             ret.splice(index, 1, ...files);
@@ -436,7 +436,8 @@ class Bundler {
     })
     .then(response => {
       const transformEventId = verbose && Activity.startEvent('transform');
-      return Promise.map(response.dependencies, (module) => {
+      const transformedModules = [];
+      return Promise.all(response.dependencies, (module, index) => {
         return self._transformModule({
           mainModuleName: response.mainModuleId,
           bundle,
@@ -444,7 +445,8 @@ class Bundler {
           platform,
           dev,
           hot,
-        }).then(transformed => {
+        })
+        .then(transformed => {
           if (verbose) {
             log('•');
             if (log.line.length >= 50) {
@@ -452,10 +454,17 @@ class Bundler {
             }
           }
           onModuleTransformed({module, transformed, response, bundle});
-          return {module, transformed};
+          transformedModules[index] = {module, transformed};
+        })
+        .fail(error => {
+          if (/Unable to find file with path/.test(error.message)) {
+            response.deleteResolution(module);
+          } else {
+            throw error;
+          }
         })
       })
-      .then(transformedModules => {
+      .then(() => {
         verbose && Activity.endEvent(transformEventId);
         return finalizeBundle({
           bundle,
@@ -466,14 +475,25 @@ class Bundler {
     });
   }
 
-  _onResolutionError(requiredPath, fromModule) {
-    log.moat(1);
-    log.red('Error: ');
-    log('Could not resolve ');
-    log.gray(requiredPath);
-    log(' from ');
-    log.gray(fromModule.path);
-    log.moat(1);
+  _onResolutionError(error, {requiredPath, fromModule}) {
+    if (error.type === 'UnableToResolveError') {
+      log.moat(1);
+      log.red('Error: ');
+      log('Could not resolve ');
+      log.gray(requiredPath);
+      log(' from ');
+      log.gray(fromModule.path);
+      log.moat(1);
+    } else {
+      const stack = error.stack.split(log.ln)
+        .slice(error.message.split(log.ln).length);
+      log.moat(1);
+      log.red('InternalError: ');
+      log.white(error.message);
+      log.moat(0);
+      log.gray.dim(stack.join(log.ln));
+      log.moat(1);
+    }
   }
 
   _processFileChange(type, filePath, root) {
@@ -528,7 +548,7 @@ class Bundler {
       'png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp', 'psd', 'svg', 'tiff'
     ].indexOf(path.extname(module.path).slice(1)) !== -1;
 
-    return Promise.all([
+    return Promise.map([
       isImage ? imageSize(module.path) : null,
       this._opts.assetServer.getAssetData(module.path, platform),
     ]).then(res => {
