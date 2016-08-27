@@ -23,6 +23,7 @@ const declareOpts = require('../utils/declareOpts');
 const path = require('path');
 const steal = require('steal');
 const url = require('url');
+const has = require('has');
 
 const endpoints = require('./api');
 
@@ -144,6 +145,11 @@ Server.prototype = {
     return this._bundler.getModuleForPath(entryFile);
   },
 
+  hasModuleForPath(filePath) {
+    const fastfs = this._bundler.getFS();
+    return has(fastfs._fastPaths, filePath);
+  },
+
   middleware() {
     return this._processRequest.bind(this);
   },
@@ -213,7 +219,7 @@ Server.prototype = {
     if (this._hmrFileChangeListener) {
       // Clear cached bundles in case user reloads
       this._bundles = Object.create(null);
-      this._hmrFileChangeListener(absPath, this._bundler.getFS.stat(absPath));
+      this._hmrFileChangeListener(absPath, this._bundler.getFS().stat(absPath));
       return;
     }
 
