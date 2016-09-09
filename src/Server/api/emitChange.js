@@ -32,21 +32,35 @@ module.exports = function emitChange(req, res) {
   });
 }
 
+function warn(message) {
+  log.moat(1);
+  log.yellow('Warning: ');
+  log.white(message);
+  log.moat(1);
+}
+
 // Calls `next` when `filePath` is considered valid.
 function withValidChange(event, filePath, fastfs, next) {
   const root = fastfs._getRoot(filePath);
   if (!root) {
+    warn('File has invalid root: ' + filePath);
     return;
   }
   if (event === 'add') {
     if (fs.sync.exists(filePath)) {
       next(root);
+    } else {
+      warn('File does not exist: ' + filePath);
     }
   } else if (fastfs._fastPaths[filePath]) {
     if (event === 'delete') {
       next(root);
     } else if (fs.sync.exists(filePath)) {
       next(root);
+    } else {
+      warn('File does not exist: ' + filePath);
     }
+  } else {
+    warn('File not yet cached: ' + filePath);
   }
 }

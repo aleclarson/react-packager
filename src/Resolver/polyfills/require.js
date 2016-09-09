@@ -71,10 +71,11 @@ function requireImpl(id) {
     mod.factory.call(global, global, require, mod.module, mod.module.exports);
 
     __DEV__ && Systrace().endEvent();
-  } catch (e) {
+  } catch (error) {
     mod.hasError = true;
     mod.isInitialized = false;
-    throw e;
+    console.warn(error.stack);
+    throw error;
   }
 
   return mod.module.exports;
